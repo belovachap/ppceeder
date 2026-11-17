@@ -321,6 +321,8 @@ void *seed_thread() {
     log_trace("Entering seed_thread()");
 
     while (!QUIT) {
+        log_debug("seed_thread() starting while loop...");
+
         for (
             node_ip_address_s *node_ip_address = SEED_NODE_IP_ADDRESSES;
             node_ip_address != NULL;
@@ -333,7 +335,14 @@ void *seed_thread() {
             process_seed_node_messages(&connection);
             free_node_connection(connection);
         }
-        if (!QUIT) sleep(60);
+
+        log_debug("seed_thread() taking a 10 minute break...");
+        for(int i = 0; i < 600; i++) {
+            if (QUIT) {
+                break;
+            }
+            sleep(1);
+        }
     }
 
     log_trace("Exiting seed_thread()");
