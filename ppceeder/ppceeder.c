@@ -224,18 +224,7 @@ void process_seed_node_messages(node_connection_s *connection) {
             break;
         }
 
-        if (strcmp(parsed.message.command, "ping") == 0)
-        {
-            log_debug("Got ping from seed node, responding with pong.");
-            bytes_s pong_payload = {.length=8, .buffer=malloc(8)};
-            memcpy(pong_payload.buffer, parsed.message.payload, 8);
-            message_s pong = new_message("pong", pong_payload);
-            write_message(s, pong);
-            free_message(pong);
-            free_message(parsed.message);
-            continue;
-        }
-        else if (strcmp(parsed.message.command, "addr") != 0)
+        if (strcmp(parsed.message.command, "addr") != 0)
         {
             log_debug("Got a %s message from seed node, dropping.", parsed.message.command);
             free_message(parsed.message);
@@ -253,6 +242,9 @@ void process_seed_node_messages(node_connection_s *connection) {
             inet_ntop(AF_INET, &connection->addr.sin_addr, seed_ip_str, sizeof(seed_ip_str));
 
             for (int i = 0; i < parsed_addr.addr_payload.count.value; i++) {
+                if (QUIT) {
+                    break;
+                }
                 net_addr_s net_addr = parsed_addr.addr_payload.addr_list[i];
                 if (net_addr.port != 9901) {
                     continue;
@@ -318,24 +310,13 @@ void *seed_thread() {
             node_ip_address != NULL;
             node_ip_address = node_ip_address->next
         ) {
+            if (QUIT) {
+                break;
+            }
             node_connection_s connection = connect_to_node(node_ip_address->ip_address);
             process_seed_node_messages(&connection);
             free_node_connection(connection);
-
-            if (QUIT) {
-                break;
-            }
         }
-
-        // Sleep for 10 minutes (600 seconds)
-        log_debug("Sleeping seed_thread() for 10 minutes");
-        for (int i = 0; i < 600; i++) {
-            if (QUIT) {
-                break;
-            }
-            sleep(1);
-        }
-        log_debug("Waking seed_thread()");
     }
 
     log_trace("Exiting seed_thread()");
