@@ -310,11 +310,62 @@ node_ip_address_s *process_seed_node_messages(node_connection_s *connection) {
     return result;
 }
 
+void prepend_node_ip_address_list(node_ip_address_s *add_list, node_ip_address_s **main_list) {
+    node_ip_address_s *add_list_tail = add_list;
+    while(add_list_tail->next) {
+        add_list_tail = add_list_tail->next;
+    }
+    add_list_tail->next = *main_list;
+    *main_list = add_list;
+}
+
+void free_node_ip_address_list(node_ip_address_s *list) {
+    while (list != NULL) {
+        node_ip_address_s *next = list->next;
+        free(list);
+        list = next;
+    }
+}
+
+void check_nodes(node_ip_address_s *node_list, int seed_height) {
+    log_trace("Entering check_nodes()");
+
+    for (node_ip_address_s *node_ip_address = node_list; node_ip_address != NULL; node_ip_address = node_ip_address->next) {
+        if (QUIT) {
+            break;
+        }
+        const char *address = node_ip_address->ip_address;
+
+        log_debug("Checking node: %s...", address);
+        node_connection_s check_conn = connect_to_node(address);
+        if (check_conn.s <= 0) {
+            log_debug("Connection to node %s failed.", address);
+            continue;
+        }
+
+        if (check_conn.version_payload.start_height >= seed_height) {
+            log_debug("Node %s has height %d >= seed height %d. Adding to GOOD_NODES.",
+                      address, check_conn.version_payload.start_height, seed_height);
+            add_or_update_good_node(address);
+        } else {
+            log_debug("Node %s has height %d < seed height %d. Rejecting.",
+                      address, check_conn.version_payload.start_height, seed_height);
+        }
+
+        free_node_connection(check_conn);
+    }
+
+    log_trace("Exiting check_nodes()");
+}
+
 void *seed_thread() {
     log_trace("Entering seed_thread()");
 
     while (!QUIT) {
         log_debug("seed_thread() starting while loop...");
+
+        node_ip_address_s *all_discovered = NULL;
+        int max_seed_height = 0;
 
         for (
             node_ip_address_s *node_ip_address = SEED_NODE_IP_ADDRESSES;
@@ -331,11 +382,20 @@ void *seed_thread() {
             }
 
             int seed_height = connection.version_payload.start_height;
+            if (seed_height > max_seed_height) {
+                max_seed_height = seed_height;
+            }
             node_ip_address_s *discovered = process_seed_node_messages(&connection);
             free_node_connection(connection);
 
-            check_nodes(discovered, seed_height);
-            free_node_ip_address_list(discovered);
+            if(discovered) {
+                prepend_node_ip_address_list(discovered, &all_discovered);
+            }
+        }
+
+        if (all_discovered) {
+            check_nodes(all_discovered, max_seed_height);
+            free_node_ip_address_list(all_discovered);
         }
 
         log_debug("seed_thread() taking a 10 minute break...");
