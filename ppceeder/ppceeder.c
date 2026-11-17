@@ -201,10 +201,10 @@ void resolve_seed_nodes() {
 
     for (struct addrinfo *info = result; info != NULL; info = info->ai_next) {
         node_ip_address_s *node_ip_address = malloc(sizeof(node_ip_address_s));
-        inet_ntop(AF_INET, &((struct sockaddr_in *)info->ai_addr)->sin_addr, node_ip_address.ip_address, sizeof(node_ip_address.ip_address));
-        node_ip_address->next = SEED_NODE_CONNECTIONS;
-        SEED_NODE_CONNECTIONS = node_ip_address;
-        log_info("Resolved seed node: %s", node_ip_address.ip_address);
+        inet_ntop(AF_INET, &((struct sockaddr_in *)info->ai_addr)->sin_addr, node_ip_address->ip_address, sizeof(node_ip_address->ip_address));
+        node_ip_address->next = SEED_NODE_IP_ADDRESSES;
+        SEED_NODE_IP_ADDRESSES = node_ip_address;
+        log_info("Resolved seed node: %s", node_ip_address->ip_address);
     }
 
     freeaddrinfo(result);
@@ -236,9 +236,9 @@ void process_seed_node_messages(node_connection_s *connection) {
             parsed_addr_payload_s parsed_addr = parse_addr_payload(window);
             log_debug("has %d addresses", parsed_addr.addr_payload.count.value);
 
-            int seed_height = connection->version_payload.height;
+            int seed_height = connection->version_payload.start_height;
             char seed_ip_str[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &conn->addr.sin_addr, seed_ip_str, sizeof(seed_ip_str));
+            inet_ntop(AF_INET, &connection->addr.sin_addr, seed_ip_str, sizeof(seed_ip_str));
 
             for (int i = 0; i < parsed_addr.addr_payload.count.value; i++) {
                 net_addr_s net_addr = parsed_addr.addr_payload.addr_list[i];
@@ -260,7 +260,7 @@ void process_seed_node_messages(node_connection_s *connection) {
 
                 // Check if this node meets the height threshold
                 log_debug("Checking node: %s...", address);
-                seed_node_connection_s check_conn = connect_to_node(address);
+                node_connection_s check_conn = connect_to_node(address);
                 if (check_conn.s <= 0) {
                     log_debug("Connection to node %s failed.", address);
                     continue;
@@ -270,22 +270,22 @@ void process_seed_node_messages(node_connection_s *connection) {
                     log_debug("Node %s has height %d >= seed height %d. Adding to GOOD_NODES.",
                               address, check_conn.version_payload.start_height, seed_height);
                     good_node_s *n = malloc(sizeof(good_node_s));
-                    n->node = strdup(address);
+                    n->ip_address = strdup(address);
                     n->last_contact = time(NULL);
                     n->next = NULL;
 
-                    pthread_mutex_lock(&GOOD_MUTEX);
+                    pthread_mutex_lock(&GOOD_NODES_MUTEX);
                     {
                         n->next = GOOD_NODES;
                         GOOD_NODES = n;
                     }
-                    pthread_mutex_unlock(&GOOD_MUTEX);
+                    pthread_mutex_unlock(&GOOD_NODES_MUTEX);
                 } else {
                     log_debug("Node %s has height %d < seed height %d. Rejecting.",
                               address, check_conn.version_payload.start_height, seed_height);
                 }
 
-                free_seed_node_connection(check_conn);
+                free_node_connection(check_conn);
             }
 
             free_addr_payload(parsed_addr.addr_payload);
@@ -302,11 +302,11 @@ void *seed_thread() {
 
     while (!QUIT) {
         for (
-            seed_node_ip_address_s *node_ip_address = SEED_NODE_IP_ADDRESSES;
+            node_ip_address_s *node_ip_address = SEED_NODE_IP_ADDRESSES;
             node_ip_address != NULL;
             node_ip_address = node_ip_address->next
         ) {
-            node_connection_s connection = connect_to_node(node_ip_address.ip_address);
+            node_connection_s connection = connect_to_node(node_ip_address->ip_address);
             process_seed_node_messages(&connection);
             free_node_connection(connection);
         }
@@ -328,13 +328,13 @@ void *seed_thread() {
 
 int get_good_ip_list(void *data, addr_t* addr, int max, int ipv4, int ipv6) {
     int i = 0;
-    pthread_mutex_lock(&GOOD_MUTEX);
+    pthread_mutex_lock(&GOOD_NODES_MUTEX);
     {
         for (good_node_s *node = GOOD_NODES; node != NULL; node = node->next) {
             char *obuf = malloc(4);
-            int ret_val = inet_pton(AF_INET, node->node, obuf);
+            int ret_val = inet_pton(AF_INET, node->ip_address, obuf);
             if (ret_val != 1) {
-                log_error("Unable to convert address '%s' to ip bytes.", node->node);
+                log_error("Unable to convert address '%s' to ip bytes.", node->ip_address);
                 free(obuf);
                 continue;
             }
@@ -348,7 +348,7 @@ int get_good_ip_list(void *data, addr_t* addr, int max, int ipv4, int ipv6) {
             addr[i-1] = a;
         }
     }
-    pthread_mutex_unlock(&GOOD_MUTEX);
+    pthread_mutex_unlock(&GOOD_NODES_MUTEX);
 
     return i-1;
 }
