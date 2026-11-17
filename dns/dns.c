@@ -1,4 +1,5 @@
 #include "dns.h"
+#include <strings.h>
 
 #define BUFLEN 512
 

@@ -1,13 +1,12 @@
 #include "net-addr.h"
 
-char *address_to_ip(char *address) {
+int address_to_ip(char *address, char out[16]) {
     char obuf[4];
-    if (inet_pton(AF_INET, address, obuf) != 1) return NULL;
-    char *ip = malloc(16);
-    memset(ip, 0, 12);
-    ip[10] = 0xFF; ip[11] = 0xFF;
-    memcpy(ip + 12, obuf, 4);
-    return ip;
+    if (inet_pton(AF_INET, address, obuf) != 1) return -1;
+    memset(out, 0, 12);
+    out[10] = 0xFF; out[11] = 0xFF;
+    memcpy(out + 12, obuf, 4);
+    return 0;
 }
 
 net_addr_s new_net_addr(uint32_t time, uint64_t services, char *ip, uint16_t port) {

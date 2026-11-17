@@ -1,5 +1,8 @@
 #include "message.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 message_s new_message(char *command, bytes_s payload) {
     message_s message = {
         .magic=MAGIC,
@@ -17,6 +20,8 @@ message_s new_message(char *command, bytes_s payload) {
 
     return message;
 }
+
+#pragma GCC diagnostic pop
 
 void free_message(message_s message) {
     free(message.payload);

@@ -41,4 +41,4 @@ add_executable(ppceeder
     ppceeder/ppceeder.c
 )
 target_include_directories(ppceeder PUBLIC ${CMAKE_SOURCE_DIR})
-target_link_libraries(ppceeder PUBLIC crypto)
+target_link_libraries(ppceeder PRIVATE crypto)

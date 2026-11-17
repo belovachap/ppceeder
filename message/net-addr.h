@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-char *address_to_ip(char *);
+int address_to_ip(char *address, char out[16]);
 
 static const int NET_ADDR_LENGTH = 30; // time + services + ip + port
 
@@ -16,7 +16,7 @@ typedef struct net_addr {
     uint32_t time; // not present in version message
     uint64_t services;
     char ip[16];
-    uint16_t port; // network byte order
+    uint16_t port; // host byte order
 } net_addr_s;
 
 net_addr_s new_net_addr(uint32_t, uint64_t, char *, uint16_t);

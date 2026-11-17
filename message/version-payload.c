@@ -4,7 +4,7 @@ uint64_t random_nonce() {
     uint64_t out;
     byte *pout = (byte *)&out;
     for (int i = 0; i < 8; i++) {
-        pout[i] = rand() % 16;
+        pout[i] = rand() & 0xFF;
     }
     return out;
 }

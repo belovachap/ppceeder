@@ -4,6 +4,10 @@ void free_addr_payload(addr_payload_s addr_payload) {
     free(addr_payload.addr_list);
 }
 
+void free_parsed_addr_payload(parsed_addr_payload_s p) {
+    free(p.addr_payload.addr_list);
+}
+
 parsed_addr_payload_s parse_addr_payload(bytes_s bytes) {
     int parsed_bytes = 0;
     bytes_s window;

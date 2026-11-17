@@ -1,6 +1,7 @@
 #include <netdb.h>
 #include <pthread.h>
 #include <signal.h>
+#include <strings.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -15,7 +16,7 @@
 #include <message/message.h>
 #include <message/version-payload.h>
 
-bool QUIT = false;
+volatile bool QUIT = false;
 const int MAX_MESSAGES = 20;
 
 const char *SEED_NODE = "seed.peercoin-library.org";
@@ -27,7 +28,7 @@ typedef struct good_node {
     struct good_node *next;
 } good_node_s;
 
-pthread_mutex_t GOOD_NODES_MUTEX;
+pthread_mutex_t GOOD_NODES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
 good_node_s *GOOD_NODES = NULL;
 
 typedef struct node_ip_address {
@@ -55,19 +56,25 @@ void write_version_message(socketfd s, struct sockaddr_in to, struct sockaddr_in
 
     uint32_t now = time(NULL);
     log_debug("now -> %u", now);
-    char *addr;
-    char *ip;
-    addr = inet_ntoa(to.sin_addr);
+    char addr[INET_ADDRSTRLEN];
+    char ip[16];
+    inet_ntop(AF_INET, &to.sin_addr, addr, sizeof(addr));
     log_debug("to addr -> %s", addr);
-    ip = address_to_ip(addr);
-    net_addr_s addr_recv = new_net_addr(now, 1, ip, false);
-    free(ip);
+    if (address_to_ip(addr, ip) != 0) {
+        log_error("Failed to convert to address to ip bytes.");
+        log_trace("Exiting write_version_message()");
+        return;
+    }
+    net_addr_s addr_recv = new_net_addr(now, 1, ip, 0);
 
-    addr = inet_ntoa(from.sin_addr);
+    inet_ntop(AF_INET, &from.sin_addr, addr, sizeof(addr));
     log_debug("from addr -> %s", addr);
-    ip = address_to_ip(addr);
-    net_addr_s addr_from = new_net_addr(now, 0, ip, false);
-    free(ip);
+    if (address_to_ip(addr, ip) != 0) {
+        log_error("Failed to convert from address to ip bytes.");
+        log_trace("Exiting write_version_message()");
+        return;
+    }
+    net_addr_s addr_from = new_net_addr(now, 0, ip, 0);
 
     log_debug("making version_payload bytes");
     char *str = heap_string("coin-seeder");
@@ -141,7 +148,7 @@ node_connection_s connect_to_node(const char *ip_str) {
     struct sockaddr_in dest;
     memset(&dest, 0, sizeof(dest));
     dest.sin_family = AF_INET;
-    dest.sin_port = htons(atoi(PEERCOIN_PORT));
+    dest.sin_port = htons((uint16_t)atoi(PEERCOIN_PORT));
     inet_pton(AF_INET, ip_str, &dest.sin_addr);
 
     socketfd s = socket(AF_INET, SOCK_STREAM, 0);
@@ -221,7 +228,7 @@ void process_seed_node_messages(node_connection_s *connection) {
     socketfd s = connection->s;
     write_getaddr_message(s);
 
-    for(int processed_messages = 0; processed_messages <= MAX_MESSAGES; processed_messages++) {
+    for(int processed_messages = 0; processed_messages < MAX_MESSAGES; processed_messages++) {
         parsed_message_s parsed = read_message(s);
         if (parsed.parsed_bytes <= 0) {
             log_warn("Seed node connection lost, moving on.");
@@ -326,6 +333,7 @@ void *seed_thread() {
             process_seed_node_messages(&connection);
             free_node_connection(connection);
         }
+        if (!QUIT) sleep(60);
     }
 
     log_trace("Exiting seed_thread()");
@@ -337,24 +345,14 @@ int get_good_ip_list(void *data, addr_t* addr, int max, int ipv4, int ipv6) {
     pthread_mutex_lock(&GOOD_NODES_MUTEX);
     {
         for (good_node_s *node = GOOD_NODES; node != NULL; node = node->next) {
-            char *obuf = malloc(4);
-            int ret_val = inet_pton(AF_INET, node->ip_address, obuf);
+            if (i >= max) break;
+            int ret_val = inet_pton(AF_INET, node->ip_address, addr[i].data.v4);
             if (ret_val != 1) {
                 log_error("Unable to convert address '%s' to ip bytes.", node->ip_address);
-                free(obuf);
                 continue;
             }
-
+            addr[i].v = AF_INET;
             i++;
-            if (i > max) {
-                free(obuf);
-                break;
-            }
-
-            addr_t a = {.v=AF_INET};
-            memcpy(a.data.v4, obuf, 4);
-            free(obuf);
-            addr[i-1] = a;
         }
     }
     pthread_mutex_unlock(&GOOD_NODES_MUTEX);
