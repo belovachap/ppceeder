@@ -22,6 +22,7 @@ const int MAX_MESSAGES = 20;
 const char *SEED_NODE = "seed.peercoin-library.org";
 const char *PEERCOIN_PORT = "9901";
 
+dns_opt_t DNS_OPT;
 typedef struct good_node {
     char ip_address[INET_ADDRSTRLEN];
     time_t last_contact;
@@ -372,7 +373,7 @@ int get_good_ip_list(void *data, addr_t* addr, int max, int ipv4, int ipv6) {
 void *dns_thread() {
     log_trace("Entering dns_thread()");
 
-    dns_opt_t dns_opt = {
+    DNS_OPT = (dns_opt_t){
         .port=53,
         .datattl=60,
         .nsttl=40000,
@@ -383,9 +384,31 @@ void *dns_thread() {
         .nRequests=0,
     };
 
-    dnsserver(&dns_opt);
+    dnsserver(&DNS_OPT);
 
     log_trace("Exiting dns_thread()");
+    return NULL;
+}
+
+void *stats_thread() {
+    log_trace("Entering stats_thread()");
+
+    while (!QUIT) {
+        int count = 0;
+        pthread_mutex_lock(&GOOD_NODES_MUTEX);
+        for (good_node_s *node = GOOD_NODES; node != NULL; node = node->next) {
+            count++;
+        }
+        pthread_mutex_unlock(&GOOD_NODES_MUTEX);
+        log_info("Stats: %d good nodes, %lu dns queries handled",
+                 count, (unsigned long)DNS_OPT.nRequests);
+        for (int i = 0; i < 60; i++) {
+            if (QUIT) break;
+            sleep(1);
+        }
+    }
+
+    log_trace("Exiting stats_thread()");
     return NULL;
 }
 
@@ -407,6 +430,7 @@ int main (int argc, char *argv[])
     resolve_seed_nodes();
 
     pthread_t seed, dns;
+    pthread_t stats;
 
     log_info("Starting dns thread");
     pthread_create(&dns, NULL, &dns_thread, NULL);
@@ -414,9 +438,15 @@ int main (int argc, char *argv[])
     log_info("Starting seed thread");
     pthread_create(&seed, NULL, &seed_thread, NULL);
 
+    log_info("Starting stats thread");
+    pthread_create(&stats, NULL, &stats_thread, NULL);
+
     void *_;
     pthread_join(seed, &_);
     log_info("Seed thread rejoined the main thread");
+
+    pthread_join(stats, &_);
+    log_info("Stats thread rejoined the main thread");
 
     // The dns thread doesn't have a clean way to stop the dns server, so we
     // cancel it after the other threads rejoin.
