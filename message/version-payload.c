@@ -3,15 +3,14 @@
 uint64_t random_nonce() {
     uint64_t out;
     byte *pout = (byte *)&out;
-    for(int i = 0; i < 8; i++) {
+    for (int i = 0; i < 8; i++) {
         pout[i] = rand() % 16;
     }
-
     return out;
 }
 
 version_payload_s new_version_payload(net_addr_s addr_recv, net_addr_s addr_from, var_str_s user_agent) {
-    return (version_payload_s) {
+    return (version_payload_s){
         .version = 70018,
         .services = 0,
         .timestamp = time(NULL),
@@ -24,108 +23,72 @@ version_payload_s new_version_payload(net_addr_s addr_recv, net_addr_s addr_from
     };
 }
 
-void free_version_payload(version_payload_s version_payload) {
-    free_var_str(version_payload.user_agent);
+void free_version_payload(version_payload_s vp) {
+    free_var_str(vp.user_agent);
 }
 
-bytes_s serialize_version_payload(version_payload_s version_payload) {
-    bytes_s addr_recv_bytes = serialize_net_addr(version_payload.addr_recv, false);
-    bytes_s addr_from_bytes = serialize_net_addr(version_payload.addr_from, false);
-    bytes_s user_agent_bytes = serialize_var_str(version_payload.user_agent);
+bytes_s serialize_version_payload(version_payload_s vp) {
+    bytes_s addr_recv_bytes = serialize_net_addr(vp.addr_recv, false);
+    bytes_s addr_from_bytes = serialize_net_addr(vp.addr_from, false);
+    bytes_s user_agent_bytes = serialize_var_str(vp.user_agent);
 
-    int length = 4 + 8 + 8 + 8 + 4 + 1; // version + services + timestamp + nonce + start_height + relay
-    length += addr_recv_bytes.length;
-    length += addr_from_bytes.length;
-    length += user_agent_bytes.length;
+    int length = 4 + 8 + 8 + 8 + 4 + 1
+               + addr_recv_bytes.length + addr_from_bytes.length + user_agent_bytes.length;
     byte *buffer = malloc(length);
-
     int offset = 0;
-    char *le = int32_t_to_little_endian(version_payload.version);
-    memcpy(buffer+offset, le, 4);
-    offset += 4;
-    free(le);
 
-    le = uint64_t_to_little_endian(version_payload.services);
-    memcpy(buffer+offset, le, 8);
-    offset += 8;
-    free(le);
+    write_i32_le(buffer + offset, vp.version); offset += 4;
+    write_u64_le(buffer + offset, vp.services); offset += 8;
+    write_i64_le(buffer + offset, vp.timestamp); offset += 8;
 
-    le = int64_t_to_little_endian(version_payload.timestamp);
-    memcpy(buffer+offset, le, 8);
-    offset += 8;
-    free(le);
-
-    memcpy(buffer+offset, addr_recv_bytes.buffer, addr_recv_bytes.length);
+    memcpy(buffer + offset, addr_recv_bytes.buffer, addr_recv_bytes.length);
     offset += addr_recv_bytes.length;
     free_bytes(addr_recv_bytes);
 
-    memcpy(buffer+offset, addr_from_bytes.buffer, addr_from_bytes.length);
+    memcpy(buffer + offset, addr_from_bytes.buffer, addr_from_bytes.length);
     offset += addr_from_bytes.length;
     free_bytes(addr_from_bytes);
 
-    le = uint64_t_to_little_endian(version_payload.nonce);
-    memcpy(buffer+offset, le, 8);
-    offset += 8;
-    free(le);
+    write_u64_le(buffer + offset, vp.nonce); offset += 8;
 
-    memcpy(buffer+offset, user_agent_bytes.buffer, user_agent_bytes.length);
+    memcpy(buffer + offset, user_agent_bytes.buffer, user_agent_bytes.length);
     offset += user_agent_bytes.length;
     free_bytes(user_agent_bytes);
 
-    le = int32_t_to_little_endian(version_payload.start_height);
-    memcpy(buffer+offset, le, 4);
-    offset += 4;
-    free(le);
-
-    memcpy(buffer+offset, &version_payload.relay, 1);
+    write_i32_le(buffer + offset, vp.start_height); offset += 4;
+    buffer[offset] = vp.relay;
 
     return (bytes_s){.length=length, .buffer=buffer};
 }
 
 parsed_version_payload_s parse_version_payload(bytes_s bytes) {
-    version_payload_s version_payload;
-    bytes_s window;
+    version_payload_s vp;
     int parsed_bytes = 0;
 
-    version_payload.version = int32_t_from_little_endian(bytes.buffer);
-    parsed_bytes += 4;
+    vp.version = read_i32_le(bytes.buffer + parsed_bytes); parsed_bytes += 4;
+    vp.services = read_u64_le(bytes.buffer + parsed_bytes); parsed_bytes += 8;
+    vp.timestamp = read_i64_le(bytes.buffer + parsed_bytes); parsed_bytes += 8;
 
-    version_payload.services = uint64_t_from_little_endian(bytes.buffer+parsed_bytes);
-    parsed_bytes += 8;
+    bytes_s window = {.length = bytes.length - parsed_bytes, .buffer = bytes.buffer + parsed_bytes};
+    parsed_net_addr_s p_recv = parse_net_addr(window, false);
+    vp.addr_recv = p_recv.net_addr; parsed_bytes += p_recv.parsed_bytes;
 
-    version_payload.timestamp = int64_t_from_little_endian(bytes.buffer+parsed_bytes);
-    parsed_bytes += 8;
+    window = (bytes_s){.length = bytes.length - parsed_bytes, .buffer = bytes.buffer + parsed_bytes};
+    parsed_net_addr_s p_from = parse_net_addr(window, false);
+    vp.addr_from = p_from.net_addr; parsed_bytes += p_from.parsed_bytes;
 
-    window.length = bytes.length - parsed_bytes;
-    window.buffer = bytes.buffer + parsed_bytes;
-    parsed_net_addr_s parsed_addr_recv = parse_net_addr(window, false);
-    version_payload.addr_recv = parsed_addr_recv.net_addr;
-    parsed_bytes += parsed_addr_recv.parsed_bytes;
+    vp.nonce = read_u64_le(bytes.buffer + parsed_bytes); parsed_bytes += 8;
 
-    window.length = bytes.length - parsed_bytes;
-    window.buffer = bytes.buffer + parsed_bytes;
-    parsed_net_addr_s parsed_addr_from = parse_net_addr(window, false);
-    version_payload.addr_from = parsed_addr_from.net_addr;
-    parsed_bytes += parsed_addr_from.parsed_bytes;
+    window = (bytes_s){.length = bytes.length - parsed_bytes, .buffer = bytes.buffer + parsed_bytes};
+    parsed_var_str_s p_ua = parse_var_str(window);
+    vp.user_agent = p_ua.var_str; parsed_bytes += p_ua.parsed_bytes;
 
-    version_payload.nonce = uint64_t_from_little_endian(bytes.buffer+parsed_bytes);
-    parsed_bytes += 8;
+    vp.start_height = read_i32_le(bytes.buffer + parsed_bytes); parsed_bytes += 4;
+    vp.relay = bytes.buffer[parsed_bytes]; parsed_bytes += 1;
 
-    window.length = bytes.length - parsed_bytes;
-    window.buffer = bytes.buffer + parsed_bytes;
-    parsed_var_str_s parsed_user_agent = parse_var_str(window);
-    version_payload.user_agent = parsed_user_agent.var_str;
-    parsed_bytes += parsed_user_agent.parsed_bytes;
-
-    version_payload.start_height = int32_t_from_little_endian(bytes.buffer+parsed_bytes);
-    parsed_bytes += 4;
-
-    version_payload.relay = bytes.buffer[parsed_bytes];
-    parsed_bytes += 1;
-
-    return (parsed_version_payload_s){.parsed_bytes=parsed_bytes, .version_payload=version_payload};
+    return (parsed_version_payload_s){.parsed_bytes=parsed_bytes, .version_payload=vp};
 }
 
-void free_parsed_version_payload(parsed_version_payload_s parsed_version_payload) {
-    free_var_str(parsed_version_payload.version_payload.user_agent);
+void free_parsed_version_payload(parsed_version_payload_s p) {
+    free_var_str(p.version_payload.user_agent);
 }

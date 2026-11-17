@@ -26,7 +26,6 @@ add_executable(ppceeder
     message/addr-payload.h
     message/bytes.c
     message/bytes.h
-    message/endianness.c
     message/endianness.h
     message/message.c
     message/message.h

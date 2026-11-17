@@ -25,38 +25,27 @@ void free_message(message_s message) {
 bytes_s serialize_message(message_s message) {
     int length = HEADER_LENGTH + message.length;
     byte *buffer = malloc(length);
-
-    byte *le = uint32_t_to_little_endian(message.magic);
-    memcpy(buffer, le, 4);
-    free(le);
-
-    memcpy(buffer+4, message.command, 12);
-
-    le = uint32_t_to_little_endian(message.length);
-    memcpy(buffer+16, le, 4);
-    free(le);
-
-    le = uint32_t_to_little_endian(message.checksum);
-    memcpy(buffer+20, le, 4);
-    free(le);
-
-    memcpy(buffer+HEADER_LENGTH, message.payload, message.length);
-
+    write_u32_le(buffer, message.magic);
+    memcpy(buffer + 4, message.command, 12);
+    write_u32_le(buffer + 16, message.length);
+    write_u32_le(buffer + 20, message.checksum);
+    if (message.length > 0)
+        memcpy(buffer + HEADER_LENGTH, message.payload, message.length);
     return (bytes_s){.buffer=buffer, .length=length};
 }
 
 parsed_message_s parse_message(bytes_s bytes) {
     message_s message;
-    message.magic = uint32_t_from_little_endian(bytes.buffer);
-    memcpy(message.command, bytes.buffer+4, 12);
-    message.length = uint32_t_from_little_endian(bytes.buffer+16);
-    message.checksum = uint32_t_from_little_endian(bytes.buffer+20);
+    message.magic = read_u32_le(bytes.buffer);
+    memcpy(message.command, bytes.buffer + 4, 12);
+    message.length = read_u32_le(bytes.buffer + 16);
+    message.checksum = read_u32_le(bytes.buffer + 20);
     if (message.length <= 0) {
         message.payload = NULL;
     }
     else {
         message.payload = malloc(message.length);
-        memcpy(message.payload, bytes.buffer+HEADER_LENGTH, message.length);
+        memcpy(message.payload, bytes.buffer + HEADER_LENGTH, message.length);
     }
 
     return (parsed_message_s){.message=message, .parsed_bytes=(HEADER_LENGTH + message.length)};
@@ -64,47 +53,34 @@ parsed_message_s parse_message(bytes_s bytes) {
 
 parsed_message_s read_message(socketfd s) {
     message_s m;
-
-    // First we need a header amount of bytes.
     int read_bytes = 0;
-    byte header_bytes[HEADER_LENGTH];
-    while(read_bytes < HEADER_LENGTH) {
-        int recv_bytes = read(s, &header_bytes[read_bytes], HEADER_LENGTH - read_bytes);
-        if(recv_bytes <= 0) {
-            return (parsed_message_s){.parsed_bytes=-1, .message=m};
-        }
-        read_bytes += recv_bytes;
+    byte header[HEADER_LENGTH];
+    while (read_bytes < HEADER_LENGTH) {
+        int n = read(s, header + read_bytes, HEADER_LENGTH - read_bytes);
+        if (n <= 0) return (parsed_message_s){.parsed_bytes=-1, .message=m};
+        read_bytes += n;
     }
 
-    m.magic = uint32_t_from_little_endian(header_bytes);
-    memcpy(m.command, header_bytes+4, 12);
-    m.length = uint32_t_from_little_endian(header_bytes+16);
-    m.checksum = uint32_t_from_little_endian(header_bytes+20);
+    m.magic = read_u32_le(header);
+    memcpy(m.command, header + 4, 12);
+    m.length = read_u32_le(header + 16);
+    m.checksum = read_u32_le(header + 20);
 
-    // Check for magic.
-    if (m.magic != MAGIC) {
+    if (m.magic != MAGIC || m.length > MAX_PAYLOAD_LENGTH)
         return (parsed_message_s){.parsed_bytes=-1, .message=m};
-    }
 
-    // Check for reasonable payload length.
-    if (m.length > MAX_PAYLOAD_LENGTH) {
-        return (parsed_message_s){.parsed_bytes=-1, .message=m};
-    }
-
-    // Then we need a payload number of bytes.
-    byte *payload = malloc(m.length);
-    read_bytes = 0;
-    while(read_bytes < m.length) {
-        int recv_bytes = read(s, &payload[read_bytes], m.length - read_bytes);
-        if(recv_bytes <= 0) {
-            free(payload);
-            return (parsed_message_s){.parsed_bytes=-1, .message=m};
+    if (m.length > 0) {
+        byte *payload = malloc(m.length);
+        read_bytes = 0;
+        while (read_bytes < m.length) {
+            int n = read(s, payload + read_bytes, m.length - read_bytes);
+            if (n <= 0) { free(payload); return (parsed_message_s){.parsed_bytes=-1, .message=m}; }
+            read_bytes += n;
         }
-        read_bytes += recv_bytes;
+        m.payload = payload;
+    } else {
+        m.payload = NULL;
     }
-
-    // Check the checksum
-    m.payload = payload;
 
     return (parsed_message_s){.parsed_bytes=HEADER_LENGTH + m.length, .message=m};
 }
