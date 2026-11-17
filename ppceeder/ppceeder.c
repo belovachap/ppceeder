@@ -16,7 +16,7 @@
 #include <message/version-payload.h>
 
 bool QUIT = false;
-const int MAX_MESSAGES = 25;
+const int MAX_MESSAGES = 20;
 
 const char *SEED_NODE = "seed.peercoin-library.org";
 const char *PEERCOIN_PORT = "9901";
@@ -232,6 +232,11 @@ void process_seed_node_messages(node_connection_s *connection) {
         }
         else
         {
+            // Close the connection to the seed node since we might take a while to process the addresses it sent.
+            close(s);
+            connection->s = -1;
+
+            // Proceed with processing addresses.
             log_debug("Got addr message from seed node.");
             bytes_s window = {.length=parsed.message.length, .buffer=parsed.message.payload};
             parsed_addr_payload_s parsed_addr = parse_addr_payload(window);
