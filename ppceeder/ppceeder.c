@@ -165,7 +165,7 @@ node_connection_s connect_to_node(const char *ip_str) {
 
     int res = connect(s, (struct sockaddr *)&dest, sizeof(dest));
     if (res < 0) {
-        log_error("Could not connect to node %s", ip_str);
+        log_debug("Could not connect to node %s", ip_str);
         close(s);
         return (node_connection_s){.s=-1};
     }
@@ -334,6 +334,10 @@ void *seed_thread() {
                 break;
             }
             node_connection_s connection = connect_to_node(node_ip_address->ip_address);
+            if (connection.s <= 0) {
+                log_error("Could not connect to seed node %s", node_ip_address->ip_address);
+                continue;
+            }
             process_seed_node_messages(&connection);
             free_node_connection(connection);
         }
