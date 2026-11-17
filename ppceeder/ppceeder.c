@@ -223,7 +223,18 @@ void process_seed_node_messages(node_connection_s *connection) {
             break;
         }
 
-        if ((strcmp(parsed.message.command, "addr") != 0))
+        if (strcmp(parsed.message.command, "ping") == 0)
+        {
+            log_debug("Got ping from seed node, responding with pong.");
+            bytes_s pong_payload = {.length=8, .buffer=malloc(8)};
+            memcpy(pong_payload.buffer, parsed.message.payload, 8);
+            message_s pong = new_message("pong", pong_payload);
+            write_message(s, pong);
+            free_message(pong);
+            free_message(parsed.message);
+            continue;
+        }
+        else if (strcmp(parsed.message.command, "addr") != 0)
         {
             log_debug("Got a %s message from seed node, dropping.", parsed.message.command);
             free_message(parsed.message);
