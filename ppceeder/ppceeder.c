@@ -96,6 +96,8 @@ parsed_version_payload_s read_version_message(socketfd s) {
 
     if(strcmp(parsed_message.message.command, "version") != 0) {
         log_error("Message command was not \"version\".");
+        free_message(parsed_message.message);
+        free_message(parsed_message.message);
         log_trace("Exiting read_version_message()");
         return (parsed_version_payload_s){.parsed_bytes=-1};
     }
@@ -105,8 +107,28 @@ parsed_version_payload_s read_version_message(socketfd s) {
         .buffer=parsed_message.message.payload,
     };
 
+    parsed_version_payload_s result = parse_version_payload(payload);
+    free_message(parsed_message.message);
+
     log_trace("Exiting read_version_message()");
-    return parse_version_payload(payload);
+    return result;
+}
+    if(strcmp(parsed_message.message.command, "version") != 0) {
+        log_error("Message command was not \"version\".");
+        log_trace("Exiting read_version_message()");
+        return (parsed_version_payload_s){.parsed_bytes=-1};
+    }
+
+    bytes_s payload = {
+        .length=parsed_message.message.length,
+        .buffer=parsed_message.message.payload,
+    };
+
+    parsed_version_payload_s result = parse_version_payload(payload);
+    free_message(parsed_message.message);
+
+    log_trace("Exiting read_version_message()");
+    return result;
 }
 
 void write_verack_message(socketfd s) {
@@ -343,16 +365,19 @@ int get_good_ip_list(void *data, addr_t* addr, int max, int ipv4, int ipv6) {
 
             i++;
             if (i > max) {
+                free(obuf);
                 break;
             }
 
-            addr_t a = {.v=AF_INET, .data=*obuf};
+            addr_t a = {.v=AF_INET};
+            memcpy(a.data.v4, obuf, 4);
+            free(obuf);
             addr[i-1] = a;
         }
     }
     pthread_mutex_unlock(&GOOD_NODES_MUTEX);
 
-    return i-1;
+    return i;
 }
 
 void *dns_thread() {

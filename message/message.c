@@ -8,7 +8,7 @@ message_s new_message(char *command, bytes_s payload) {
     };
 
     memset(message.command, 0, 12); // 0 pad the command
-    memcpy(message.command, command, strlen(command));
+    strncpy(message.command, command, 12);
 
     byte obuf[SHA256_DIGEST_LENGTH];
     SHA256(payload.buffer, payload.length, obuf);
@@ -55,6 +55,7 @@ parsed_message_s parse_message(bytes_s bytes) {
         message.payload = NULL;
     }
     else {
+        message.payload = malloc(message.length);
         memcpy(message.payload, bytes.buffer+HEADER_LENGTH, message.length);
     }
 
