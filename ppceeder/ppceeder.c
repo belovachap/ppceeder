@@ -97,24 +97,6 @@ parsed_version_payload_s read_version_message(socketfd s) {
     if(strcmp(parsed_message.message.command, "version") != 0) {
         log_error("Message command was not \"version\".");
         free_message(parsed_message.message);
-        free_message(parsed_message.message);
-        log_trace("Exiting read_version_message()");
-        return (parsed_version_payload_s){.parsed_bytes=-1};
-    }
-
-    bytes_s payload = {
-        .length=parsed_message.message.length,
-        .buffer=parsed_message.message.payload,
-    };
-
-    parsed_version_payload_s result = parse_version_payload(payload);
-    free_message(parsed_message.message);
-
-    log_trace("Exiting read_version_message()");
-    return result;
-}
-    if(strcmp(parsed_message.message.command, "version") != 0) {
-        log_error("Message command was not \"version\".");
         log_trace("Exiting read_version_message()");
         return (parsed_version_payload_s){.parsed_bytes=-1};
     }
