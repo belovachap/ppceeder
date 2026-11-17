@@ -215,6 +215,7 @@ void process_seed_node_messages(node_connection_s *connection) {
     log_trace("Entering process_seed_node_messages()");
 
     socketfd s = connection->s;
+    write_getaddr_message(s);
 
     for(int processed_messages = 0; processed_messages <= MAX_MESSAGES; processed_messages++) {
         parsed_message_s parsed = read_message(s);
