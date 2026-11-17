@@ -1,6 +1,7 @@
 #include <netdb.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdio.h>
 #include <strings.h>
 
 #include <errno.h>
@@ -419,9 +420,49 @@ void handle_control_c(int _) {
     log_trace("Exiting handle_control_c()");
 }
 
+static int parse_log_level(const char *level_str) {
+    if (strcasecmp(level_str, "trace") == 0) return LOG_TRACE;
+    if (strcasecmp(level_str, "debug") == 0) return LOG_DEBUG;
+    if (strcasecmp(level_str, "info") == 0)  return LOG_INFO;
+    if (strcasecmp(level_str, "warn") == 0)  return LOG_WARN;
+    if (strcasecmp(level_str, "error") == 0) return LOG_ERROR;
+    if (strcasecmp(level_str, "fatal") == 0) return LOG_FATAL;
+    return -1;
+}
+
+static void print_usage(const char *prog) {
+    fprintf(stderr, "Usage: %s [-l <level>]\n", prog);
+    fprintf(stderr, "  -l <level>  Set log level: trace, debug, info, warn, error, fatal (default: trace)\n");
+    fprintf(stderr, "  -h          Show this help message\n");
+}
+
 int main (int argc, char *argv[])
 {
-    log_set_level(LOG_TRACE);
+    int log_level = LOG_TRACE;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        }
+        else if (strcmp(argv[i], "-l") == 0 && i + 1 < argc) {
+            i++;
+            int level = parse_log_level(argv[i]);
+            if (level < 0) {
+                fprintf(stderr, "Invalid log level: %s\n", argv[i]);
+                print_usage(argv[0]);
+                return 1;
+            }
+            log_level = level;
+        }
+        else {
+            fprintf(stderr, "Unknown argument: %s\n", argv[i]);
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    log_set_level(log_level);
 
     struct sigaction act = {.sa_handler=handle_control_c};
     sigaction(SIGINT, &act, NULL);
