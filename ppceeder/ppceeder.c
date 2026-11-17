@@ -407,6 +407,45 @@ void *stats_thread() {
     return NULL;
 }
 
+void *evict_thread() {
+    log_trace("Entering evict_thread()");
+
+    while (!QUIT) {
+        for (int i = 0; i < 600; i++) {
+            if (QUIT) break;
+            sleep(1);
+        }
+        if (QUIT) break;
+
+        time_t cutoff = time(NULL) - (24 * 60 * 60);
+        int evicted = 0;
+
+        pthread_mutex_lock(&GOOD_NODES_MUTEX);
+        {
+            good_node_s **pp = &GOOD_NODES;
+            while (*pp != NULL) {
+                if ((*pp)->last_contact <= cutoff) {
+                    good_node_s *to_free = *pp;
+                    *pp = to_free->next;
+                    log_debug("Evicting good node %s (last_contact=%ld)", to_free->ip_address, (long)to_free->last_contact);
+                    free(to_free);
+                    evicted++;
+                } else {
+                    pp = &(*pp)->next;
+                }
+            }
+        }
+        pthread_mutex_unlock(&GOOD_NODES_MUTEX);
+
+        if (evicted > 0) {
+            log_info("Evicted %d stale node(s) from GOOD_NODES.", evicted);
+        }
+    }
+
+    log_trace("Exiting evict_thread()");
+    return NULL;
+}
+
 void handle_control_c(int _) {
     log_trace("Entering handle_control_c()");
     log_info("Shutting down");
@@ -464,8 +503,7 @@ int main (int argc, char *argv[])
     // Resolve seed nodes and connect
     resolve_seed_nodes();
 
-    pthread_t seed, dns;
-    pthread_t stats;
+    pthread_t seed, dns, stats, evict;
 
     log_info("Starting dns thread");
     pthread_create(&dns, NULL, &dns_thread, NULL);
@@ -476,12 +514,18 @@ int main (int argc, char *argv[])
     log_info("Starting stats thread");
     pthread_create(&stats, NULL, &stats_thread, NULL);
 
+    log_info("Starting evict thread");
+    pthread_create(&evict, NULL, &evict_thread, NULL);
+
     void *_;
     pthread_join(seed, &_);
     log_info("Seed thread rejoined the main thread");
 
     pthread_join(stats, &_);
     log_info("Stats thread rejoined the main thread");
+
+    pthread_join(evict, &_);
+    log_info("Evict thread rejoined the main thread");
 
     // The dns thread doesn't have a clean way to stop the dns server, so we
     // cancel it after the other threads rejoin.
