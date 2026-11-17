@@ -16,28 +16,39 @@
 #include <message/version-payload.h>
 
 bool QUIT = false;
+const int MAX_MESSAGES = 25;
 
 const char *SEED_NODE = "seed.peercoin-library.org";
-const char *SEED_PORT = "9901";
+const char *PEERCOIN_PORT = "9901";
 
-typedef struct coin_node {
-    char *node;
+typedef struct good_node {
+    char ip_address[INET_ADDRSTRLEN];
     time_t last_contact;
-    struct coin_node *next;
-} coin_node_s;
+    struct good_node *next;
+} good_node_s;
 
-typedef struct seed_node_connection {
+pthread_mutex_t GOOD_NODES_MUTEX;
+good_node_s *GOOD_NODES = NULL;
+
+typedef struct node_ip_address {
+    char ip_address[INET_ADDRSTRLEN];
+    struct node_ip_address *next;
+} node_ip_address_s;
+
+node_ip_address_s *SEED_NODE_IP_ADDRESSES = NULL;
+
+typedef struct node_connection {
     socketfd s;
     struct sockaddr_in addr;
     version_payload_s version_payload;
-    struct seed_node_connection *next;
-} seed_node_connection_s;
+} node_connection_s;
 
-pthread_mutex_t GOOD_MUTEX;
-coin_node_s *GOOD_NODES = NULL;
-
-pthread_mutex_t SEED_CONN_MUTEX;
-seed_node_connection_s *SEED_NODE_CONNECTIONS = NULL;
+void free_node_connection(node_connection_s conn) {
+    if (conn.s > 0) {
+        close(conn.s);
+    }
+    free_version_payload(conn.version_payload);
+}
 
 void write_version_message(socketfd s, struct sockaddr_in to, struct sockaddr_in from) {
     log_trace("Entering write_version_message()");
@@ -120,19 +131,19 @@ void write_getaddr_message(socketfd s) {
     log_trace("Exiting write_getaddr_message()");
 }
 
-seed_node_connection_s connect_to_seed_node(const char *ip_str) {
-    log_trace("Entering connect_to_seed_node()");
+node_connection_s connect_to_node(const char *ip_str) {
+    log_trace("Entering connect_to_node()");
 
     struct sockaddr_in dest;
     memset(&dest, 0, sizeof(dest));
     dest.sin_family = AF_INET;
-    dest.sin_port = htons(atoi(SEED_PORT));
+    dest.sin_port = htons(atoi(PEERCOIN_PORT));
     inet_pton(AF_INET, ip_str, &dest.sin_addr);
 
     socketfd s = socket(AF_INET, SOCK_STREAM, 0);
     if (s == -1) {
         log_error("Could not create socket for seed node %s", ip_str);
-        return (seed_node_connection_s){.s=-1};
+        return (node_connection_s){.s=-1};
     }
 
     struct timeval timeout = {.tv_sec=5, .tv_usec=0};
@@ -141,9 +152,9 @@ seed_node_connection_s connect_to_seed_node(const char *ip_str) {
 
     int res = connect(s, (struct sockaddr *)&dest, sizeof(dest));
     if (res < 0) {
-        log_error("Could not connect to seed node %s", ip_str);
+        log_error("Could not connect to node %s", ip_str);
         close(s);
-        return (seed_node_connection_s){.s=-1};
+        return (node_connection_s){.s=-1};
     }
 
     log_debug("Connected to seed node: %s", ip_str);
@@ -156,78 +167,21 @@ seed_node_connection_s connect_to_seed_node(const char *ip_str) {
     if(parsed.parsed_bytes == -1) {
         log_error("Handshake failed with seed node %s", ip_str);
         close(s);
-        return (seed_node_connection_s){.s=-1};
+        return (node_connection_s){.s=-1};
     }
 
     write_verack_message(s);
 
-    seed_node_connection_s conn = {
+    node_connection_s conn = {
         .s = s,
         .addr = dest,
         .version_payload = parsed.version_payload,
-        .next = NULL,
     };
 
     log_debug("Seed node %s reports height: %d", ip_str, conn.version_payload.start_height);
 
-    log_trace("Exiting connect_to_seed_node()");
+    log_trace("Exiting connect_to_node()");
     return conn;
-}
-
-void free_seed_node_connection(seed_node_connection_s conn) {
-    if (conn.s > 0) {
-        close(conn.s);
-    }
-    free_version_payload(conn.version_payload);
-}
-
-int get_max_seed_height() {
-    int max_height = 0;
-    pthread_mutex_lock(&SEED_CONN_MUTEX);
-    {
-        for (seed_node_connection_s *node = SEED_NODE_CONNECTIONS; node != NULL; node = node->next) {
-            if (node->version_payload.start_height > max_height) {
-                max_height = node->version_payload.start_height;
-            }
-        }
-    }
-    pthread_mutex_unlock(&SEED_CONN_MUTEX);
-    return max_height;
-}
-
-void add_seed_node_connection(seed_node_connection_s conn) {
-    pthread_mutex_lock(&SEED_CONN_MUTEX);
-    {
-        seed_node_connection_s *new_node = malloc(sizeof(seed_node_connection_s));
-        *new_node = conn;
-        new_node->next = SEED_NODE_CONNECTIONS;
-        SEED_NODE_CONNECTIONS = new_node;
-    }
-    pthread_mutex_unlock(&SEED_CONN_MUTEX);
-}
-
-void remove_seed_node_connection(socketfd s) {
-    pthread_mutex_lock(&SEED_CONN_MUTEX);
-    {
-        seed_node_connection_s *prev = NULL;
-        seed_node_connection_s *curr = SEED_NODE_CONNECTIONS;
-        while (curr != NULL) {
-            if (curr->s == s) {
-                if (prev) {
-                    prev->next = curr->next;
-                } else {
-                    SEED_NODE_CONNECTIONS = curr->next;
-                }
-                close(curr->s);
-                free_version_payload(curr->version_payload);
-                free(curr);
-                break;
-            }
-            prev = curr;
-            curr = curr->next;
-        }
-    }
-    pthread_mutex_unlock(&SEED_CONN_MUTEX);
 }
 
 void resolve_seed_nodes() {
@@ -239,53 +193,50 @@ void resolve_seed_nodes() {
     hints.ai_socktype = SOCK_STREAM;
 
     struct addrinfo *result;
-    int error_number = getaddrinfo(SEED_NODE, SEED_PORT, &hints, &result);
+    int error_number = getaddrinfo(SEED_NODE, NULL, &hints, &result);
     if (error_number != 0) {
         log_error("getaddrinfo() for %s: %s", SEED_NODE, gai_strerror(error_number));
         return;
     }
 
     for (struct addrinfo *info = result; info != NULL; info = info->ai_next) {
-        char ip_str[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &((struct sockaddr_in *)info->ai_addr)->sin_addr, ip_str, sizeof(ip_str));
-        log_info("Resolved seed node: %s", ip_str);
-
-        seed_node_connection_s conn = connect_to_seed_node(ip_str);
-        if (conn.s > 0) {
-            add_seed_node_connection(conn);
-        }
+        node_ip_address_s *node_ip_address = malloc(sizeof(node_ip_address_s));
+        inet_ntop(AF_INET, &((struct sockaddr_in *)info->ai_addr)->sin_addr, node_ip_address.ip_address, sizeof(node_ip_address.ip_address));
+        node_ip_address->next = SEED_NODE_CONNECTIONS;
+        SEED_NODE_CONNECTIONS = node_ip_address;
+        log_info("Resolved seed node: %s", node_ip_address.ip_address);
     }
 
     freeaddrinfo(result);
     log_trace("Exiting resolve_seed_nodes()");
 }
 
-void process_seed_node_messages() {
+void process_seed_node_messages(node_connection_s *connection) {
     log_trace("Entering process_seed_node_messages()");
 
-    pthread_mutex_lock(&SEED_CONN_MUTEX);
-    seed_node_connection_s *conn = SEED_NODE_CONNECTIONS;
-    pthread_mutex_unlock(&SEED_CONN_MUTEX);
+    socketfd s = connection->s;
 
-    while (conn != NULL) {
-        seed_node_connection_s *next = conn->next;
-        socketfd s = conn->s;
-
+    for(int processed_messages = 0; processed_messages <= MAX_MESSAGES; processed_messages++) {
         parsed_message_s parsed = read_message(s);
         if (parsed.parsed_bytes <= 0) {
-            log_warn("Seed node connection lost, removing.");
-            remove_seed_node_connection(s);
-            conn = next;
-            continue;
+            log_warn("Seed node connection lost, moving on.");
+            break;
         }
 
-        if (strcmp(parsed.message.command, "addr") == 0) {
+        if ((strcmp(parsed.message.command, "addr") != 0))
+        {
+            log_debug("Got a %s message from seed node, dropping.", parsed.message.command);
+            free_message(parsed.message);
+            continue;
+        }
+        else
+        {
             log_debug("Got addr message from seed node.");
             bytes_s window = {.length=parsed.message.length, .buffer=parsed.message.payload};
             parsed_addr_payload_s parsed_addr = parse_addr_payload(window);
             log_debug("has %d addresses", parsed_addr.addr_payload.count.value);
 
-            int seed_height = get_max_seed_height();
+            int seed_height = connection->version_payload.height;
             char seed_ip_str[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &conn->addr.sin_addr, seed_ip_str, sizeof(seed_ip_str));
 
@@ -309,7 +260,7 @@ void process_seed_node_messages() {
 
                 // Check if this node meets the height threshold
                 log_debug("Checking node: %s...", address);
-                seed_node_connection_s check_conn = connect_to_seed_node(address);
+                seed_node_connection_s check_conn = connect_to_node(address);
                 if (check_conn.s <= 0) {
                     log_debug("Connection to node %s failed.", address);
                     continue;
@@ -318,7 +269,7 @@ void process_seed_node_messages() {
                 if (check_conn.version_payload.start_height >= seed_height) {
                     log_debug("Node %s has height %d >= seed height %d. Adding to GOOD_NODES.",
                               address, check_conn.version_payload.start_height, seed_height);
-                    coin_node_s *n = malloc(sizeof(coin_node_s));
+                    good_node_s *n = malloc(sizeof(good_node_s));
                     n->node = strdup(address);
                     n->last_contact = time(NULL);
                     n->next = NULL;
@@ -338,12 +289,9 @@ void process_seed_node_messages() {
             }
 
             free_addr_payload(parsed_addr.addr_payload);
-        } else {
-            log_debug("Got a %s message from seed node, dropping.", parsed.message.command);
+            free_message(parsed.message);
+            break;
         }
-
-        free_message(parsed.message);
-        conn = next;
     }
 
     log_trace("Exiting process_seed_node_messages()");
@@ -353,20 +301,15 @@ void *seed_thread() {
     log_trace("Entering seed_thread()");
 
     while (!QUIT) {
-        // Resolve seed nodes and connect
-        resolve_seed_nodes();
-
-        // Request addresses from all seed connections
-        pthread_mutex_lock(&SEED_CONN_MUTEX);
-        {
-            for (seed_node_connection_s *node = SEED_NODE_CONNECTIONS; node != NULL; node = node->next) {
-                write_getaddr_message(node->s);
-            }
+        for (
+            seed_node_ip_address_s *node_ip_address = SEED_NODE_IP_ADDRESSES;
+            node_ip_address != NULL;
+            node_ip_address = node_ip_address->next
+        ) {
+            node_connection_s connection = connect_to_node(node_ip_address.ip_address);
+            process_seed_node_messages(&connection);
+            free_node_connection(connection);
         }
-        pthread_mutex_unlock(&SEED_CONN_MUTEX);
-
-        // Process messages from seed connections
-        process_seed_node_messages();
 
         // Sleep for 10 minutes (600 seconds)
         log_debug("Sleeping seed_thread() for 10 minutes");
@@ -387,7 +330,7 @@ int get_good_ip_list(void *data, addr_t* addr, int max, int ipv4, int ipv6) {
     int i = 0;
     pthread_mutex_lock(&GOOD_MUTEX);
     {
-        for (coin_node_s *node = GOOD_NODES; node != NULL; node = node->next) {
+        for (good_node_s *node = GOOD_NODES; node != NULL; node = node->next) {
             char *obuf = malloc(4);
             int ret_val = inet_pton(AF_INET, node->node, obuf);
             if (ret_val != 1) {
@@ -443,6 +386,9 @@ int main (int argc, char *argv[])
 
     struct sigaction act = {.sa_handler=handle_control_c};
     sigaction(SIGINT, &act, NULL);
+
+    // Resolve seed nodes and connect
+    resolve_seed_nodes();
 
     pthread_t seed, dns;
 
