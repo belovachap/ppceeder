@@ -309,6 +309,10 @@ void *seed_thread() {
             node_connection_s connection = connect_to_node(node_ip_address->ip_address);
             process_seed_node_messages(&connection);
             free_node_connection(connection);
+
+            if (QUIT) {
+                break;
+            }
         }
 
         // Sleep for 10 minutes (600 seconds)
