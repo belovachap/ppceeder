@@ -291,17 +291,7 @@ void process_seed_node_messages(node_connection_s *connection) {
                 if (check_conn.version_payload.start_height >= seed_height) {
                     log_debug("Node %s has height %d >= seed height %d. Adding to GOOD_NODES.",
                               address, check_conn.version_payload.start_height, seed_height);
-                    good_node_s *n = malloc(sizeof(good_node_s));
-                    strncpy(n->ip_address, address, INET_ADDRSTRLEN - 1);
-                    n->last_contact = time(NULL);
-                    n->next = NULL;
-
-                    pthread_mutex_lock(&GOOD_NODES_MUTEX);
-                    {
-                        n->next = GOOD_NODES;
-                        GOOD_NODES = n;
-                    }
-                    pthread_mutex_unlock(&GOOD_NODES_MUTEX);
+                    add_or_update_good_node(address);
                 } else {
                     log_debug("Node %s has height %d < seed height %d. Rejecting.",
                               address, check_conn.version_payload.start_height, seed_height);
@@ -499,3 +489,22 @@ int main (int argc, char *argv[])
     pthread_join(dns, &_);
     log_info("Dns thread rejoined the main thread");
 }
+void add_or_update_good_node(const char *ip_address) {
+    pthread_mutex_lock(&GOOD_NODES_MUTEX);
+    {
+        for (good_node_s *node = GOOD_NODES; node != NULL; node = node->next) {
+            if (strcmp(node->ip_address, ip_address) == 0) {
+                node->last_contact = time(NULL);
+                pthread_mutex_unlock(&GOOD_NODES_MUTEX);
+                return;
+            }
+        }
+        good_node_s *n = malloc(sizeof(good_node_s));
+        strncpy(n->ip_address, ip_address, INET_ADDRSTRLEN - 1);
+        n->last_contact = time(NULL);
+        n->next = GOOD_NODES;
+        GOOD_NODES = n;
+    }
+    pthread_mutex_unlock(&GOOD_NODES_MUTEX);
+}
+
