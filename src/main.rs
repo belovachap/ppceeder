@@ -1,5 +1,6 @@
 mod log; mod message; mod dns;
 
+use std::collections::HashSet;
 use std::ffi::CString;
 use crate::log::{get_logger, LogLevel};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -306,7 +307,7 @@ fn process_seed_node_messages(
     result
 }
 
-fn check_nodes(state: &Arc<AppState>, node_list: &[String], seed_height: i32) {
+fn check_nodes(state: &Arc<AppState>, node_list: &HashSet<String>, seed_height: i32) {
     log_trace!("logger", "Entering check_nodes()");
 
     for address in node_list {
@@ -353,7 +354,7 @@ fn seed_thread(state: Arc<AppState>) {
     while !QUIT.load(Ordering::Relaxed) {
         log_debug!("logger", "seed_thread() starting while loop...");
 
-        let mut all_discovered: Vec<String> = Vec::new();
+        let mut all_discovered: HashSet<String> = HashSet::new();
         let mut max_seed_height: i32 = 0;
 
         for seed_ip in &state.seed_node_ip_addresses {
