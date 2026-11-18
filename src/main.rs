@@ -310,9 +310,7 @@ fn process_seed_node_messages(
 fn check_nodes(state: &Arc<AppState>, node_list: &HashSet<String>, seed_height: i32) {
     log_trace!("logger", "Entering check_nodes()");
 
-    let num_threads = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4);
+    let num_threads = 128;
 
     let nodes: Vec<&String> = node_list.iter().collect();
     let chunk_size = (nodes.len() + num_threads - 1) / num_threads;
@@ -398,8 +396,8 @@ fn seed_thread(state: Arc<AppState>) {
             check_nodes(&state, &all_discovered, max_seed_height);
         }
 
-        log_debug!("logger", "seed_thread() taking a 10 minute break...");
-        for _ in 0..600 {
+        log_debug!("logger", "seed_thread() taking a 60 minute break...");
+        for _ in 0..3600 {
             if QUIT.load(Ordering::Relaxed) {
                 break;
             }
@@ -455,14 +453,11 @@ fn evict_thread(state: Arc<AppState>) {
     log_trace!("logger", "Entering evict_thread()");
 
     while !QUIT.load(Ordering::Relaxed) {
-        for _ in 0..600 {
+        for _ in 0..60 {
             if QUIT.load(Ordering::Relaxed) {
                 break;
             }
             thread::sleep(Duration::from_secs(1));
-        }
-        if QUIT.load(Ordering::Relaxed) {
-            break;
         }
 
         let cutoff = SystemTime::now()
