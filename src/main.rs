@@ -310,40 +310,55 @@ fn process_seed_node_messages(
 fn check_nodes(state: &Arc<AppState>, node_list: &HashSet<String>, seed_height: i32) {
     log_trace!("logger", "Entering check_nodes()");
 
-    for address in node_list {
-        if QUIT.load(Ordering::Relaxed) {
-            break;
-        }
+    let num_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
 
-        log_debug!("logger", "Checking node: {}...", address);
-        let check_conn = connect_to_node(address);
-        let (_, _, version_payload) = match check_conn {
-            Some(c) => c,
-            None => {
-                log_debug!("logger", "Connection to node {} failed.", address);
-                continue;
-            }
-        };
+    let nodes: Vec<&String> = node_list.iter().collect();
+    let chunk_size = (nodes.len() + num_threads - 1) / num_threads;
 
-        if version_payload.start_height >= seed_height {
-            log_debug!(
-                "logger",
-                "Node {} has height {} >= seed height {}. Adding to GOOD_NODES.",
-                address,
-                version_payload.start_height,
-                seed_height
-            );
-            state.add_or_update_good_node(address);
-        } else {
-            log_debug!(
-                "logger",
-                "Node {} has height {} < seed height {}. Rejecting.",
-                address,
-                version_payload.start_height,
-                seed_height
-            );
+    std::thread::scope(|s| {
+        for chunk in nodes.chunks(chunk_size) {
+            let state_clone = Arc::clone(state);
+            let chunk_owned: Vec<String> = chunk.iter().map(|s| s.to_string()).collect();
+            s.spawn(move || {
+                for address in &chunk_owned {
+                    if QUIT.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    log_debug!("logger", "Checking node: {}...", address);
+                    let check_conn = connect_to_node(address);
+                    let (_, _, version_payload) = match check_conn {
+                        Some(c) => c,
+                        None => {
+                            log_debug!("logger", "Connection to node {} failed.", address);
+                            continue;
+                        }
+                    };
+
+                    if version_payload.start_height >= seed_height {
+                        log_debug!(
+                            "logger",
+                            "Node {} has height {} >= seed height {}. Adding to GOOD_NODES.",
+                            address,
+                            version_payload.start_height,
+                            seed_height
+                        );
+                        state_clone.add_or_update_good_node(address);
+                    } else {
+                        log_debug!(
+                            "logger",
+                            "Node {} has height {} < seed height {}. Rejecting.",
+                            address,
+                            version_payload.start_height,
+                            seed_height
+                        );
+                    }
+                }
+            });
         }
-    }
+    });
 
     log_trace!("logger", "Exiting check_nodes()");
 }
