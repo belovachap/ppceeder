@@ -104,42 +104,42 @@ fn format_timestamp() -> String {
 #[macro_export]
 macro_rules! log_trace {
     ($_logger:expr, $($arg:tt)*) => {
-        get_logger().lock().unwrap().log($crate::log::LogLevel::Trace, file!(), line!(), &format!($($arg)*))
+        $crate::log::get_logger().lock().unwrap().log($crate::log::LogLevel::Trace, file!(), line!(), &format!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! log_debug {
     ($_logger:expr, $($arg:tt)*) => {
-        get_logger().lock().unwrap().log($crate::log::LogLevel::Debug, file!(), line!(), &format!($($arg)*))
+        $crate::log::get_logger().lock().unwrap().log($crate::log::LogLevel::Debug, file!(), line!(), &format!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! log_info {
     ($_logger:expr, $($arg:tt)*) => {
-        get_logger().lock().unwrap().log($crate::log::LogLevel::Info, file!(), line!(), &format!($($arg)*))
+        $crate::log::get_logger().lock().unwrap().log($crate::log::LogLevel::Info, file!(), line!(), &format!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! log_warn {
     ($_logger:expr, $($arg:tt)*) => {
-        get_logger().lock().unwrap().log($crate::log::LogLevel::Warn, file!(), line!(), &format!($($arg)*))
+        $crate::log::get_logger().lock().unwrap().log($crate::log::LogLevel::Warn, file!(), line!(), &format!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! log_error {
     ($_logger:expr, $($arg:tt)*) => {
-        get_logger().lock().unwrap().log($crate::log::LogLevel::Error, file!(), line!(), &format!($($arg)*))
+        $crate::log::get_logger().lock().unwrap().log($crate::log::LogLevel::Error, file!(), line!(), &format!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! log_fatal {
     ($_logger:expr, $($arg:tt)*) => {
-        get_logger().lock().unwrap().log($crate::log::LogLevel::Fatal, file!(), line!(), &format!($($arg)*))
+        $crate::log::get_logger().lock().unwrap().log($crate::log::LogLevel::Fatal, file!(), line!(), &format!($($arg)*))
     };
 }
 

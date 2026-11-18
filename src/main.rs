@@ -1,5 +1,6 @@
 mod log; mod message; mod dns;
 
+use crate::log::LogLevel;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
