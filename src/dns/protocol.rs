@@ -46,7 +46,7 @@ pub struct DnsOpt {
     pub host: String,
     pub ns: String,
     pub mbox: Option<String>,
-    pub cb: Box<dyn Fn(&DnsOpt, &mut Vec<Addr>, bool, bool) -> usize>,
+    pub cb: Box<dyn Fn(&DnsOpt, &mut Vec<Addr>, bool, bool) -> usize + Send>,
     pub n_requests: Arc<AtomicU64>,
 }
 
