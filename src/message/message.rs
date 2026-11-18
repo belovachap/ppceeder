@@ -2,8 +2,8 @@
 
 use crate::message::bytes::Bytes;
 use crate::message::endianness::*;
-use std::io::{Read, Write};
-use std::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 const MAGIC: u32 = 0xE5E9E8E6;
 const HEADER_LENGTH: usize = 24; // magic(4) + command(12) + length(4) + checksum(4)
@@ -72,9 +72,9 @@ impl Message {
     }
 
     /// Read a message from a TCP stream.
-    pub fn read(stream: &mut TcpStream) -> std::io::Result<Message> {
+    pub async fn read(stream: &mut TcpStream) -> std::io::Result<Message> {
         let mut header = [0u8; HEADER_LENGTH];
-        stream.read_exact(&mut header)?;
+        stream.read_exact(&mut header).await?;
 
         let magic = read_u32_le(&header[0..4]);
         let mut command = [0u8; 12];
@@ -91,7 +91,7 @@ impl Message {
 
         let payload = if length > 0 {
             let mut buf = vec![0u8; length as usize];
-            stream.read_exact(&mut buf)?;
+            stream.read_exact(&mut buf).await?;
             buf
         } else {
             Vec::new()
@@ -107,9 +107,9 @@ impl Message {
     }
 
     /// Write a message to a TCP stream.
-    pub fn write(&self, stream: &mut TcpStream) -> std::io::Result<()> {
+    pub async fn write(&self, stream: &mut TcpStream) -> std::io::Result<()> {
         let bytes = self.serialize();
-        stream.write_all(&bytes)?;
+        stream.write_all(&bytes).await?;
         Ok(())
     }
 }

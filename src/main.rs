@@ -3,11 +3,12 @@ mod log; mod message; mod dns;
 use std::collections::HashSet;
 use std::ffi::CString;
 use crate::log::{get_logger, LogLevel};
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::net::TcpStream;
+use tokio::task::JoinSet;
 
 use crate::dns::protocol::{Addr, DnsOpt};
 use crate::dns::server::dnsserver;
@@ -79,8 +80,8 @@ impl AppState {
     }
 }
 
-fn write_version_message(
-    stream: &mut std::net::TcpStream,
+async fn write_version_message(
+    stream: &mut TcpStream,
     to: SocketAddrV4,
     from: SocketAddrV4,
 ) {
@@ -116,15 +117,15 @@ fn write_version_message(
     let version_payload = VersionPayload::new(addr_recv, addr_from, user_agent);
     let payload = version_payload.serialize();
     let message = Message::new("version", payload);
-    let _ = message.write(stream);
+    let _ = message.write(stream).await;
 
     log_trace!("logger", "Exiting write_version_message()");
 }
 
-fn read_version_message(stream: &mut std::net::TcpStream) -> Option<VersionPayload> {
+async fn read_version_message(stream: &mut TcpStream) -> Option<VersionPayload> {
     log_trace!("logger", "Entering read_version_message()");
 
-    let message = match Message::read(stream) {
+    let message = match Message::read(stream).await {
         Ok(m) => m,
         Err(_) => {
             log_error!("logger", "Failed to read_message.");
@@ -149,21 +150,21 @@ fn read_version_message(stream: &mut std::net::TcpStream) -> Option<VersionPaylo
     Some(version_payload)
 }
 
-fn write_verack_message(stream: &mut std::net::TcpStream) {
+async fn write_verack_message(stream: &mut TcpStream) {
     log_trace!("logger", "Entering write_verack_message()");
     let message = Message::new("verack", Vec::new());
-    let _ = message.write(stream);
+    let _ = message.write(stream).await;
     log_trace!("logger", "Exiting write_verack_message()");
 }
 
-fn write_getaddr_message(stream: &mut std::net::TcpStream) {
+async fn write_getaddr_message(stream: &mut TcpStream) {
     log_trace!("logger", "Entering write_getaddr_message()");
     let message = Message::new("getaddr", Vec::new());
-    let _ = message.write(stream);
+    let _ = message.write(stream).await;
     log_trace!("logger", "Exiting write_getaddr_message()");
 }
 
-fn connect_to_node(ip_str: &str) -> Option<(std::net::TcpStream, SocketAddrV4, VersionPayload)> {
+async fn connect_to_node(ip_str: &str) -> Option<(TcpStream, SocketAddrV4, VersionPayload)> {
     log_trace!("logger", "Entering connect_to_node()");
 
     let dest = SocketAddrV4::new(
@@ -171,29 +172,26 @@ fn connect_to_node(ip_str: &str) -> Option<(std::net::TcpStream, SocketAddrV4, V
         PEERCOIN_PORT,
     );
 
-    let mut stream = match std::net::TcpStream::connect_timeout(&SocketAddr::V4(dest), Duration::from_secs(5)) {
+    let mut stream = match TcpStream::connect(&dest).await {
         Ok(s) => s,
         Err(_) => {
             return None;
         }
     };
 
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
-
     log_debug!("logger", "Connected to node: {}", ip_str);
 
     let from = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
-    write_version_message(&mut stream, dest, from);
+    write_version_message(&mut stream, dest, from).await;
 
-    let version_payload = match read_version_message(&mut stream) {
+    let version_payload = match read_version_message(&mut stream).await {
         Some(vp) => vp,
         None => {
             return None;
         }
     };
 
-    write_verack_message(&mut stream);
+    write_verack_message(&mut stream).await;
 
     log_debug!(
         "logger",
@@ -206,7 +204,7 @@ fn connect_to_node(ip_str: &str) -> Option<(std::net::TcpStream, SocketAddrV4, V
     Some((stream, dest, version_payload))
 }
 
-fn check_node_version(ip_str: &str) -> Option<VersionPayload> {
+async fn check_node_version(ip_str: &str) -> Option<VersionPayload> {
     log_trace!("logger", "Entering check_node_version()");
 
     let dest = SocketAddrV4::new(
@@ -214,21 +212,15 @@ fn check_node_version(ip_str: &str) -> Option<VersionPayload> {
         PEERCOIN_PORT,
     );
 
-    let mut stream = match std::net::TcpStream::connect_timeout(
-        &SocketAddr::V4(dest),
-        Duration::from_secs(5),
-    ) {
+    let mut stream = match TcpStream::connect(&dest).await {
         Ok(s) => s,
         Err(_) => return None,
     };
 
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
-
     let from = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
-    write_version_message(&mut stream, dest, from);
+    write_version_message(&mut stream, dest, from).await;
 
-    let version_payload = read_version_message(&mut stream)?;
+    let version_payload = read_version_message(&mut stream).await?;
 
     drop(stream);
 
@@ -275,21 +267,21 @@ fn resolve_seed_nodes() -> Vec<String> {
     addresses
 }
 
-fn process_seed_node_messages(
-    stream: &mut std::net::TcpStream,
+async fn process_seed_node_messages(
+    stream: &mut TcpStream,
     seed_ip: &str,
 ) -> Vec<String> {
     log_trace!("logger", "Entering process_seed_node_messages()");
 
     let mut result = Vec::new();
-    write_getaddr_message(stream);
+    write_getaddr_message(stream).await;
 
     for _ in 0..MAX_MESSAGES {
         if QUIT.load(Ordering::Relaxed) {
             break;
         }
 
-        let message = match Message::read(stream) {
+        let message = match Message::read(stream).await {
             Ok(m) => m,
             Err(_) => {
                 log_warn!("logger", "Seed node connection lost, moving on.");
@@ -337,60 +329,55 @@ fn process_seed_node_messages(
     result
 }
 
-fn check_nodes(state: &Arc<AppState>, node_list: &HashSet<String>, seed_height: i32) {
+async fn check_nodes(state: &Arc<AppState>, node_list: &HashSet<String>, seed_height: i32) {
     log_trace!("logger", "Entering check_nodes()");
 
-    let num_threads = 128;
+    let mut join_set = JoinSet::new();
 
-    let nodes: Vec<&String> = node_list.iter().collect();
-    let chunk_size = (nodes.len() + num_threads - 1) / num_threads;
+    for address in node_list.iter() {
+        let state_clone = Arc::clone(state);
+        let address = address.clone();
+        join_set.spawn(async move {
+            if QUIT.load(Ordering::Relaxed) {
+                return;
+            }
 
-    std::thread::scope(|s| {
-        for chunk in nodes.chunks(chunk_size) {
-            let state_clone = Arc::clone(state);
-            let chunk_owned: Vec<String> = chunk.iter().map(|s| s.to_string()).collect();
-            s.spawn(move || {
-                for address in &chunk_owned {
-                    if QUIT.load(Ordering::Relaxed) {
-                        break;
-                    }
-
-                    log_debug!("logger", "Checking node: {}...", address);
-                    let version_payload = match check_node_version(address) {
-                        Some(vp) => vp,
-                        None => {
-                            log_debug!("logger", "Connection to node {} failed.", address);
-                            continue;
-                        }
-                    };
-
-                    if version_payload.start_height >= seed_height {
-                        log_debug!(
-                            "logger",
-                            "Node {} has height {} >= seed height {}. Adding to GOOD_NODES.",
-                            address,
-                            version_payload.start_height,
-                            seed_height
-                        );
-                        state_clone.add_or_update_good_node(address);
-                    } else {
-                        log_debug!(
-                            "logger",
-                            "Node {} has height {} < seed height {}. Rejecting.",
-                            address,
-                            version_payload.start_height,
-                            seed_height
-                        );
-                    }
+            log_debug!("logger", "Checking node: {}...", address);
+            let version_payload = match check_node_version(&address).await {
+                Some(vp) => vp,
+                None => {
+                    log_debug!("logger", "Connection to node {} failed.", address);
+                    return;
                 }
-            });
-        }
-    });
+            };
+
+            if version_payload.start_height >= seed_height {
+                log_debug!(
+                    "logger",
+                    "Node {} has height {} >= seed height {}. Adding to GOOD_NODES.",
+                    address,
+                    version_payload.start_height,
+                    seed_height
+                );
+                state_clone.add_or_update_good_node(&address);
+            } else {
+                log_debug!(
+                    "logger",
+                    "Node {} has height {} < seed height {}. Rejecting.",
+                    address,
+                    version_payload.start_height,
+                    seed_height
+                );
+            }
+        });
+    }
+
+    while join_set.join_next().await.is_some() {}
 
     log_trace!("logger", "Exiting check_nodes()");
 }
 
-fn seed_thread(state: Arc<AppState>) {
+async fn seed_thread(state: Arc<AppState>) {
     log_trace!("logger", "Entering seed_thread()");
 
     while !QUIT.load(Ordering::Relaxed) {
@@ -403,7 +390,7 @@ fn seed_thread(state: Arc<AppState>) {
             if QUIT.load(Ordering::Relaxed) {
                 break;
             }
-            let connection = connect_to_node(seed_ip);
+            let connection = connect_to_node(seed_ip).await;
             let (mut stream, _, version_payload) = match connection {
                 Some(c) => c,
                 None => {
@@ -417,12 +404,12 @@ fn seed_thread(state: Arc<AppState>) {
                 max_seed_height = seed_height;
             }
 
-            let discovered = process_seed_node_messages(&mut stream, seed_ip);
+            let discovered = process_seed_node_messages(&mut stream, seed_ip).await;
             all_discovered.extend(discovered);
         }
 
         if !all_discovered.is_empty() {
-            check_nodes(&state, &all_discovered, max_seed_height);
+            check_nodes(&state, &all_discovered, max_seed_height).await;
         }
 
         log_debug!("logger", "seed_thread() taking a 60 minute break...");
@@ -430,14 +417,14 @@ fn seed_thread(state: Arc<AppState>) {
             if QUIT.load(Ordering::Relaxed) {
                 break;
             }
-            thread::sleep(Duration::from_secs(1));
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
     log_trace!("logger", "Exiting seed_thread()");
 }
 
-fn dns_thread(state: Arc<AppState>) {
+async fn dns_thread(state: Arc<AppState>) {
     log_trace!("logger", "Entering dns_thread()");
 
     let state_clone = Arc::clone(&state);
@@ -456,12 +443,12 @@ fn dns_thread(state: Arc<AppState>) {
         n_requests: Arc::clone(&state.dns_requests),
     };
 
-    let _ = dnsserver(&mut dns_opt);
+    let _ = tokio::task::spawn_blocking(move || dnsserver(&mut dns_opt)).await;
 
     log_trace!("logger", "Exiting dns_thread()");
 }
 
-fn stats_thread(state: Arc<AppState>) {
+async fn stats_thread(state: Arc<AppState>) {
     log_trace!("logger", "Entering stats_thread()");
 
     while !QUIT.load(Ordering::Relaxed) {
@@ -472,14 +459,14 @@ fn stats_thread(state: Arc<AppState>) {
             if QUIT.load(Ordering::Relaxed) {
                 break;
             }
-            thread::sleep(Duration::from_secs(1));
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
     log_trace!("logger", "Exiting stats_thread()");
 }
 
-fn evict_thread(state: Arc<AppState>) {
+async fn evict_thread(state: Arc<AppState>) {
     log_trace!("logger", "Entering evict_thread()");
 
     while !QUIT.load(Ordering::Relaxed) {
@@ -487,7 +474,7 @@ fn evict_thread(state: Arc<AppState>) {
             if QUIT.load(Ordering::Relaxed) {
                 break;
             }
-            thread::sleep(Duration::from_secs(1));
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
 
         let cutoff = SystemTime::now()
@@ -548,7 +535,8 @@ fn address_to_ip(address: &str, out: &mut [u8; 16]) -> i32 {
     -1
 }
 
-pub fn main() {
+#[tokio::main]
+async fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut log_level = LogLevel::Trace;
 
@@ -590,33 +578,33 @@ pub fn main() {
 
     log_info!("logger", "Starting dns thread");
     let dns_state = Arc::clone(&state);
-    let dns_handle = thread::spawn(move || dns_thread(dns_state));
+    let dns_handle = tokio::spawn(async move { dns_thread(dns_state).await });
 
     log_info!("logger", "Starting seed thread");
     let seed_state = Arc::clone(&state);
-    let seed_handle = thread::spawn(move || seed_thread(seed_state));
+    let seed_handle = tokio::spawn(async move { seed_thread(seed_state).await });
 
     log_info!("logger", "Starting stats thread");
     let stats_state = Arc::clone(&state);
-    let stats_handle = thread::spawn(move || stats_thread(stats_state));
+    let stats_handle = tokio::spawn(async move { stats_thread(stats_state).await });
 
     log_info!("logger", "Starting evict thread");
     let evict_state = Arc::clone(&state);
-    let evict_handle = thread::spawn(move || evict_thread(evict_state));
+    let evict_handle = tokio::spawn(async move { evict_thread(evict_state).await });
 
-    let _ = seed_handle.join();
+    let _ = seed_handle.await;
     log_info!("logger", "Seed thread rejoined the main thread");
 
-    let _ = stats_handle.join();
+    let _ = stats_handle.await;
     log_info!("logger", "Stats thread rejoined the main thread");
 
-    let _ = evict_handle.join();
+    let _ = evict_handle.await;
     log_info!("logger", "Evict thread rejoined the main thread");
 
     // The dns thread doesn't have a clean way to stop the dns server, so we
     // cancel it after the other threads rejoin.
     // In Rust we can't easily cancel a thread, so we just wait.
     // Alternatively, the dns server could check QUIT in its loop.
-    let _ = dns_handle.join();
+    let _ = dns_handle.await;
     log_info!("logger", "Dns thread rejoined the main thread");
 }
