@@ -393,26 +393,44 @@ async fn seed_thread(state: Arc<AppState>) {
         let mut all_discovered: HashSet<String> = HashSet::new();
         let mut max_seed_height: i32 = 0;
 
+        // Spawn concurrent tasks for each seed node
+        let mut join_set = JoinSet::new();
+
         for seed_ip in &state.seed_node_ip_addresses {
-            if QUIT.load(Ordering::Relaxed) {
-                break;
-            }
-            let connection = connect_to_node(seed_ip).await;
-            let (mut stream, _, version_payload) = match connection {
-                Some(c) => c,
-                None => {
-                    log_error!("logger", "Could not connect to seed node {}", seed_ip);
-                    continue;
+            let seed_ip = seed_ip.clone();
+            join_set.spawn(async move {
+                if QUIT.load(Ordering::Relaxed) {
+                    return (seed_ip, 0i32, Vec::new());
                 }
-            };
 
-            let seed_height = version_payload.start_height;
-            if seed_height > max_seed_height {
-                max_seed_height = seed_height;
+                let connection = connect_to_node(&seed_ip).await;
+                let (mut stream, _, version_payload) = match connection {
+                    Some(c) => c,
+                    None => {
+                        log_error!("logger", "Could not connect to seed node {}", seed_ip);
+                        return (seed_ip, 0i32, Vec::new());
+                    }
+                };
+
+                let seed_height = version_payload.start_height;
+                let discovered = process_seed_node_messages(&mut stream, &seed_ip).await;
+                (seed_ip, seed_height, discovered)
+            });
+        }
+
+        // Collect results from all concurrent seed node connections
+        while let Some(result) = join_set.join_next().await {
+            match result {
+                Ok((_seed_ip, seed_height, discovered)) => {
+                    if seed_height > max_seed_height {
+                        max_seed_height = seed_height;
+                    }
+                    all_discovered.extend(discovered);
+                }
+                Err(e) => {
+                    log_error!("logger", "Seed node task panicked: {}", e);
+                }
             }
-
-            let discovered = process_seed_node_messages(&mut stream, seed_ip).await;
-            all_discovered.extend(discovered);
         }
 
         if !all_discovered.is_empty() {
