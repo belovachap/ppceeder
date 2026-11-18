@@ -507,7 +507,7 @@ fn address_to_ip(address: &str, out: &mut [u8; 16]) -> i32 {
 
 pub fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let log_level;
+    let log_level = LogLevel::Trace;
 
     let mut i = 1;
     while i < args.len() {
