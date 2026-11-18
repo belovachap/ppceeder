@@ -1,5 +1,6 @@
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
 use hickory_server::authority::{Authority, LookupError, LookupOptions, LookupRecords, MessageRequest, ZoneType};
@@ -65,6 +66,7 @@ impl Authority for SeederAuthority {
         rtype: RecordType,
         lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
+        self.state.dns_requests.fetch_add(1, Ordering::Relaxed);
         if rtype != RecordType::A {
             return Err(LookupError::from(hickory_proto::op::ResponseCode::NoError));
         }
