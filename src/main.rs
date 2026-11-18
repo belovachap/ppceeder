@@ -445,7 +445,7 @@ async fn seed_thread(state: Arc<AppState>) {
 async fn dns_thread(state: Arc<AppState>) {
     log_trace!("logger", "Entering dns_thread()");
 
-    let origin_name = Name::from_ascii("dot-net-seed.peercoin-library.org.")
+    let origin_name = Name::from_ascii("seed.peercoin.net.")
         .expect("Invalid origin name");
     let origin = LowerName::from(origin_name);
     let authority = SeederAuthority::new(origin.clone(), Arc::clone(&state));
