@@ -1,4 +1,5 @@
 use std::io;
+use std::sync::atomic::Ordering;
 use std::os::unix::io::RawFd;
 
 use libc::{
@@ -145,7 +146,7 @@ pub fn dnsserver(opt: &mut DnsOpt) -> io::Result<()> {
             }
         }
 
-        opt.n_requests += 1;
+        opt.n_requests.fetch_add(1, Ordering::Relaxed);
     }
 }
 

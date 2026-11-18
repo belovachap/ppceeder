@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::ffi::CString;
 use crate::log::{get_logger, LogLevel};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -32,13 +32,15 @@ struct GoodNode {
 struct AppState {
     good_nodes: Mutex<Vec<GoodNode>>,
     seed_node_ip_addresses: Vec<String>,
+    dns_requests: Arc<AtomicU64>,
 }
 
 impl AppState {
-    fn new(seed_node_ip_addresses: Vec<String>) -> Self {
+    fn new(seed_node_ip_addresses: Vec<String>, dns_requests: Arc<AtomicU64>) -> Self {
         AppState {
             good_nodes: Mutex::new(Vec::new()),
             seed_node_ip_addresses,
+            dns_requests,
         }
     }
 
@@ -424,7 +426,7 @@ fn dns_thread(state: Arc<AppState>) {
         ns: "dot-not-seed.peercoin-library.org".to_string(),
         mbox: Some(String::new()),
         cb,
-        n_requests: 0,
+        n_requests: Arc::clone(&state.dns_requests),
     };
 
     let _ = dnsserver(&mut dns_opt);
@@ -437,7 +439,8 @@ fn stats_thread(state: Arc<AppState>) {
 
     while !QUIT.load(Ordering::Relaxed) {
         let count = state.good_nodes.lock().unwrap().len();
-        log_info!("logger", "Stats: {} good nodes", count);
+        let dns_reqs = state.dns_requests.load(Ordering::Relaxed);
+        log_info!("logger", "Stats: {} good nodes, {} dns requests", count, dns_reqs);
         for _ in 0..60 {
             if QUIT.load(Ordering::Relaxed) {
                 break;
@@ -555,7 +558,8 @@ pub fn main() {
     // Resolve seed nodes and connect
     let seed_node_ip_addresses = resolve_seed_nodes();
 
-    let state = Arc::new(AppState::new(seed_node_ip_addresses));
+    let dns_requests = Arc::new(AtomicU64::new(0));
+    let state = Arc::new(AppState::new(seed_node_ip_addresses, dns_requests));
 
     log_info!("logger", "Starting dns thread");
     let dns_state = Arc::clone(&state);

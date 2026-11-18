@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
+
 pub const CLASS_IN: u16 = 1;
 pub const QCLASS_ANY: u16 = 255;
 
@@ -44,7 +47,7 @@ pub struct DnsOpt {
     pub ns: String,
     pub mbox: Option<String>,
     pub cb: Box<dyn Fn(&DnsOpt, &mut Vec<Addr>, bool, bool) -> usize>,
-    pub n_requests: u64,
+    pub n_requests: Arc<AtomicU64>,
 }
 
 /// Parse a DNS name from wire format, handling compression pointers.
