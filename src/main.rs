@@ -1,5 +1,6 @@
 mod log; mod message; mod dns;
 
+use std::ffi::CString;
 use crate::log::{get_logger, LogLevel};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -216,7 +217,8 @@ fn resolve_seed_nodes() -> Vec<String> {
     };
 
     let mut result: *mut libc::addrinfo = std::ptr::null_mut();
-    let error_number = unsafe { libc::getaddrinfo(SEED_NODE.as_ptr() as *const _, std::ptr::null(), &hints, &mut result) };
+    let c_seed_node = CString::new(SEED_NODE).unwrap();
+    let error_number = unsafe { libc::getaddrinfo(c_seed_node.as_ptr(), std::ptr::null(), &hints, &mut result) };
 
     if error_number != 0 {
         let err_str = unsafe { std::ffi::CStr::from_ptr(libc::gai_strerror(error_number)) };
