@@ -181,7 +181,7 @@ fn connect_to_node(ip_str: &str) -> Option<(std::net::TcpStream, SocketAddrV4, V
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
 
-    log_debug!("logger", "Connected to seed node: {}", ip_str);
+    log_debug!("logger", "Connected to node: {}", ip_str);
 
     let from = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
     write_version_message(&mut stream, dest, from);
@@ -189,7 +189,6 @@ fn connect_to_node(ip_str: &str) -> Option<(std::net::TcpStream, SocketAddrV4, V
     let version_payload = match read_version_message(&mut stream) {
         Some(vp) => vp,
         None => {
-            log_error!("logger", "Handshake failed with seed node {}", ip_str);
             return None;
         }
     };
