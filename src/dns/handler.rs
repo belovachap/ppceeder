@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use hickory_server::authority::{Authority, LookupError, LookupOptions, LookupRecords, MessageRequest, ZoneType};
 use hickory_server::server::RequestInfo;
 use hickory_proto::rr::rdata::A;
-use hickory_proto::rr::{LowerName, RData, RecordSet, RecordType};
+use hickory_proto::rr::{LowerName, Name, RData, RecordSet, RecordType};
 
 use crate::AppState;
 
