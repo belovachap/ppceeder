@@ -8,7 +8,7 @@ use std::time::SystemTime;
 
 static LOGGER: OnceLock<Mutex<Logger>> = OnceLock::new();
 
-fn get_logger() -> &'static Mutex<Logger> {
+pub fn get_logger() -> &'static Mutex<Logger> {
     LOGGER.get_or_init(|| Mutex::new(Logger::new()))
 }
 
