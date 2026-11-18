@@ -450,11 +450,11 @@ async fn dns_thread(state: Arc<AppState>) {
 
     let origin_name = Name::from_ascii("dot-net-ns.peercoin-library.org.")
         .expect("Invalid origin name");
-    let origin = LowerName::from(origin_name.clone());
-    let authority = SeederAuthority::new(origin, Arc::clone(&state));
+    let origin = LowerName::from(origin_name);
+    let authority = SeederAuthority::new(origin.clone(), Arc::clone(&state));
 
     let mut catalog = Catalog::new();
-    catalog.upsert(origin_name, Box::new(authority));
+    catalog.upsert(origin, Box::new(Arc::new(authority)));
     let mut server = ServerFuture::new(catalog);
 
     let udp_socket = tokio::net::UdpSocket::bind("0.0.0.0:53")
@@ -465,7 +465,7 @@ async fn dns_thread(state: Arc<AppState>) {
     let tcp_listener = tokio::net::TcpListener::bind("0.0.0.0:53")
         .await
         .expect("Failed to bind TCP listener");
-    server.register_listener(tcp_listener, Protocol::Tcp);
+    server.register_listener(tcp_listener, Duration::from_secs(30));
 
     log_info!("logger", "DNS server listening on port 53");
 

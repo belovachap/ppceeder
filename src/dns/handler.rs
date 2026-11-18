@@ -55,8 +55,8 @@ impl Authority for SeederAuthority {
         false
     }
 
-    async fn update(&self, _update: &MessageRequest) -> Result<bool, LookupError> {
-        Err(LookupError::from(hickory_proto::op::ResponseCode::NotImp))
+    async fn update(&self, _update: &MessageRequest) -> Result<bool, hickory_proto::op::ResponseCode> {
+        Err(hickory_proto::op::ResponseCode::NotImp)
     }
 
     async fn lookup(
@@ -76,7 +76,7 @@ impl Authority for SeederAuthority {
         request: RequestInfo<'_>,
         lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
-        self.lookup(request.name(), request.query_type(), lookup_options).await
+        self.lookup(request.query.name(), request.query.query_type(), lookup_options).await
     }
 
     async fn get_nsec_records(
