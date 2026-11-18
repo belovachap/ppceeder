@@ -1,15 +1,8 @@
 # Building ppceeder
 
-## Install Dependencies
+This is a Rust project, so it uses Cargo to handle building.
 
-```bash
-sudo apt install git \
-                 cmake \
-                 ninja-build \
-                 build-essential
-                 pkg-config \
-                 libssl-dev
-```
+## Install Dependences
 
 ## Get Code
 
@@ -21,9 +14,6 @@ cd ppceeder
 ## Build
 
 ```bash
-mkdir build
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja
-cmake --build . -j$(nproc)
+cargo build --release
 ```
 
