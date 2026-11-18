@@ -174,7 +174,6 @@ fn connect_to_node(ip_str: &str) -> Option<(std::net::TcpStream, SocketAddrV4, V
     let mut stream = match std::net::TcpStream::connect_timeout(&SocketAddr::V4(dest), Duration::from_secs(5)) {
         Ok(s) => s,
         Err(_) => {
-            log_debug!("logger", "Could not connect to node {}", ip_str);
             return None;
         }
     };
