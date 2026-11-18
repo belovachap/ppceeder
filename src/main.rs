@@ -454,12 +454,12 @@ async fn dns_thread(state: Arc<AppState>) {
     catalog.upsert(origin, Box::new(Arc::new(authority)));
     let mut server = ServerFuture::new(catalog);
 
-    let udp_socket = tokio::net::UdpSocket::bind("0.0.0.0:53")
+    let udp_socket = tokio::net::UdpSocket::bind("167.235.67.249:53")
         .await
         .expect("Failed to bind UDP socket");
     server.register_socket(udp_socket);
 
-    let tcp_listener = tokio::net::TcpListener::bind("0.0.0.0:53")
+    let tcp_listener = tokio::net::TcpListener::bind("167.235.67.249:53")
         .await
         .expect("Failed to bind TCP listener");
     server.register_listener(tcp_listener, Duration::from_secs(30));
