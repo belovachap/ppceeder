@@ -206,6 +206,36 @@ fn connect_to_node(ip_str: &str) -> Option<(std::net::TcpStream, SocketAddrV4, V
     Some((stream, dest, version_payload))
 }
 
+fn check_node_version(ip_str: &str) -> Option<VersionPayload> {
+    log_trace!("logger", "Entering check_node_version()");
+
+    let dest = SocketAddrV4::new(
+        ip_str.parse::<Ipv4Addr>().ok()?,
+        PEERCOIN_PORT,
+    );
+
+    let mut stream = match std::net::TcpStream::connect_timeout(
+        &SocketAddr::V4(dest),
+        Duration::from_secs(5),
+    ) {
+        Ok(s) => s,
+        Err(_) => return None,
+    };
+
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+
+    let from = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
+    write_version_message(&mut stream, dest, from);
+
+    let version_payload = read_version_message(&mut stream)?;
+
+    drop(stream);
+
+    log_trace!("logger", "Exiting check_node_version()");
+    Some(version_payload)
+}
+
 fn resolve_seed_nodes() -> Vec<String> {
     log_trace!("logger", "Entering resolve_seed_nodes()");
 
@@ -326,9 +356,8 @@ fn check_nodes(state: &Arc<AppState>, node_list: &HashSet<String>, seed_height: 
                     }
 
                     log_debug!("logger", "Checking node: {}...", address);
-                    let check_conn = connect_to_node(address);
-                    let (_, _, version_payload) = match check_conn {
-                        Some(c) => c,
+                    let version_payload = match check_node_version(address) {
+                        Some(vp) => vp,
                         None => {
                             log_debug!("logger", "Connection to node {} failed.", address);
                             continue;
