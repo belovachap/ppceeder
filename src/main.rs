@@ -10,13 +10,15 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
 use tokio::task::JoinSet;
 
-use crate::dns::protocol::{Addr, DnsOpt};
-use crate::dns::server::dnsserver;
+use hickory_dns::proto::rr::Name;
+use hickory_dns::server::{ServerFuture, Protocol};
+
 use crate::message::addr_payload::AddrPayload;
 use crate::message::message::Message;
 use crate::message::net_addr::NetAddr;
 use crate::message::var_str::VarStr;
 use crate::message::version_payload::VersionPayload;
+use crate::dns::handler::SeederAuthority;
 
 const MAX_MESSAGES: usize = 20;
 const SEED_NODE: &str = "seed.peercoin-library.org";
@@ -25,12 +27,12 @@ const PEERCOIN_PORT: u16 = 9901;
 static QUIT: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone)]
-struct GoodNode {
+pub(crate) struct GoodNode {
     ip_address: String,
     last_contact: u64,
 }
 
-struct AppState {
+pub(crate) struct AppState {
     good_nodes: Mutex<Vec<GoodNode>>,
     seed_node_ip_addresses: Vec<String>,
     dns_requests: Arc<AtomicU64>,
@@ -63,20 +65,9 @@ impl AppState {
         });
     }
 
-    fn get_good_ip_list(&self, addrs: &mut Vec<Addr>, _max: usize, _ipv4: bool, _ipv6: bool) -> usize {
+    fn get_good_ip_list(&self, _max: usize, _ipv4: bool, _ipv6: bool) -> usize {
         let nodes = self.good_nodes.lock().unwrap();
-        let mut i = 0;
-        for node in nodes.iter() {
-            if i >= _max {
-                break;
-            }
-            if let Ok(ip) = node.ip_address.parse::<Ipv4Addr>() {
-                let octets = ip.octets();
-                addrs.push(Addr::V4(octets));
-                i += 1;
-            }
-        }
-        i
+        nodes.len().min(_max)
     }
 }
 
@@ -454,23 +445,25 @@ async fn seed_thread(state: Arc<AppState>) {
 async fn dns_thread(state: Arc<AppState>) {
     log_trace!("logger", "Entering dns_thread()");
 
-    let state_clone = Arc::clone(&state);
-    let cb = Box::new(move |_opt: &DnsOpt, addrs: &mut Vec<Addr>, ipv4: bool, ipv6: bool| -> usize {
-        state_clone.get_good_ip_list(addrs, usize::MAX, ipv4, ipv6)
-    });
+    let origin = Name::from_ascii("dot-net-ns.peercoin-library.org.")
+        .expect("Invalid origin name");
+    let authority = SeederAuthority::new(origin, Arc::clone(&state));
 
-    let mut dns_opt = DnsOpt {
-        port: 53,
-        datattl: 60,
-        nsttl: 40000,
-        host: "dot-net-ns.peercoin-library.org".to_string(),
-        ns: "dot-not-seed.peercoin-library.org".to_string(),
-        mbox: Some(String::new()),
-        cb,
-        n_requests: Arc::clone(&state.dns_requests),
-    };
+    let mut server = ServerFuture::new(authority);
 
-    let _ = tokio::task::spawn_blocking(move || dnsserver(&mut dns_opt)).await;
+    let udp_socket = tokio::net::UdpSocket::bind("0.0.0.0:53")
+        .await
+        .expect("Failed to bind UDP socket");
+    server.register_socket(udp_socket);
+
+    let tcp_listener = tokio::net::TcpListener::bind("0.0.0.0:53")
+        .await
+        .expect("Failed to bind TCP listener");
+    server.register_listener(tcp_listener, Protocol::Tcp);
+
+    log_info!("logger", "DNS server listening on port 53");
+
+    let _ = server.block_until_done().await;
 
     log_trace!("logger", "Exiting dns_thread()");
 }
