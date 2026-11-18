@@ -10,8 +10,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
 use tokio::task::JoinSet;
 
-use hickory_dns::proto::rr::Name;
-use hickory_dns::server::{ServerFuture, Protocol};
+use hickory_proto::rr::Name;
+use hickory_server::server::{ServerFuture, Protocol};
 
 use crate::message::addr_payload::AddrPayload;
 use crate::message::message::Message;

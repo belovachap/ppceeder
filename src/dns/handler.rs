@@ -2,10 +2,10 @@ use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use hickory_dns::authority::{Authority, Lookup, LookupOptions, ZoneType};
-use hickory_dns::proto::op::{Message, ResponseCode};
-use hickory_dns::proto::rr::rdata::A;
-use hickory_dns::proto::rr::{Name, RData, Record, RecordType};
+use hickory_server::authority::{Authority, Lookup, LookupOptions, ZoneType};
+use hickory_proto::op::{Message, ResponseCode};
+use hickory_proto::rr::rdata::A;
+use hickory_proto::rr::{Name, RData, Record, RecordType};
 
 use crate::AppState;
 
