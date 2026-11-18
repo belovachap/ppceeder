@@ -89,3 +89,45 @@ impl Authority for SeederAuthority {
         Ok(LookupRecords::new(lookup_options, Arc::new(RecordSet::new(&hickory_proto::rr::Name::root(), RecordType::A, 0))))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::AppState;
+    use hickory_proto::rr::Name;
+    use hickory_server::authority::LookupOptions;
+    use std::sync::atomic::AtomicU64;
+
+    #[tokio::test]
+    async fn test_dns_requests_counter_increments() {
+        let dns_requests = Arc::new(AtomicU64::new(0));
+        let state = Arc::new(AppState::new(vec![], Arc::clone(&dns_requests)));
+        let origin = LowerName::from(Name::from_ascii("example.com.").unwrap());
+        let authority = SeederAuthority::new(origin, Arc::clone(&state));
+
+        assert_eq!(dns_requests.load(Ordering::Relaxed), 0);
+
+        let name = LowerName::from(Name::from_ascii("example.com.").unwrap());
+        let _ = authority.lookup(&name, RecordType::A, LookupOptions::default()).await;
+
+        assert_eq!(dns_requests.load(Ordering::Relaxed), 1);
+
+        // Second call should increment again
+        let _ = authority.lookup(&name, RecordType::A, LookupOptions::default()).await;
+
+        assert_eq!(dns_requests.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn test_dns_requests_counter_increments_on_non_a_record() {
+        let dns_requests = Arc::new(AtomicU64::new(0));
+        let state = Arc::new(AppState::new(vec![], Arc::clone(&dns_requests)));
+        let origin = LowerName::from(Name::from_ascii("example.com.").unwrap());
+        let authority = SeederAuthority::new(origin, Arc::clone(&state));
+
+        let name = LowerName::from(Name::from_ascii("example.com.").unwrap());
+        let _ = authority.lookup(&name, RecordType::AAAA, LookupOptions::default()).await;
+
+        assert_eq!(dns_requests.load(Ordering::Relaxed), 1);
+    }
+}
