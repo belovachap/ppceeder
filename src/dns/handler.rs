@@ -30,7 +30,8 @@ impl SeederAuthority {
         if rdatas.is_empty() {
             return Err(LookupError::from(hickory_proto::op::ResponseCode::NXDomain));
         }
-        let mut record_set = RecordSet::new(name.clone().into(), RecordType::A, 60);
+        let name: Name = name.clone().into();
+        let mut record_set = RecordSet::new(&name, RecordType::A, 60);
         for rdata in rdatas {
             record_set.add_rdata(rdata);
         }
@@ -83,6 +84,6 @@ impl Authority for SeederAuthority {
         _name: &LowerName,
         lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
-        Ok(LookupRecords::new(lookup_options, Arc::new(RecordSet::new(hickory_proto::rr::Name::root(), RecordType::A, 0))))
+        Ok(LookupRecords::new(lookup_options, Arc::new(RecordSet::new(&hickory_proto::rr::Name::root(), RecordType::A, 0))))
     }
 }
