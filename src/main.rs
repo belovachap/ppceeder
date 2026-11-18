@@ -557,8 +557,8 @@ fn parse_log_level(level_str: &str) -> Option<LogLevel> {
 }
 
 fn print_usage(prog: &str) {
-    eprintln!("Usage: {} -b <bind_address> [-l <level>]", prog);
-    eprintln!("  -b <address>  Bind address for DNS server (required, e.g. 0.0.0.0)");
+    eprintln!("Usage: {} [-b <bind_address>] [-l <level>]", prog);
+    eprintln!("  -b <address>  Bind address for DNS server (default: 0.0.0.0)");
     eprintln!("  -l <level>  Set log level: trace, debug, info, warn, error, fatal (default: trace)");
     eprintln!("  -h          Show this help message");
 }
@@ -609,11 +609,7 @@ async fn main() {
 
     let bind_address = match bind_address {
         Some(addr) => addr,
-        None => {
-            eprintln!("Error: bind address is required. Use -b <address>");
-            print_usage(&args[0]);
-            return;
-        }
+        None => "0.0.0.0".to_string(),
     };
 
     // Set the log level
