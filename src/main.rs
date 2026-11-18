@@ -14,7 +14,7 @@ use tokio::net::TcpStream;
 use tokio::task::JoinSet;
 
 use hickory_proto::rr::Name;
-use hickory_server::server::{ServerFuture, Protocol};
+use hickory_server::server::ServerFuture;
 
 use crate::message::addr_payload::AddrPayload;
 use crate::message::message::Message;

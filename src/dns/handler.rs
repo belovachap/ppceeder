@@ -2,7 +2,7 @@ use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use hickory_server::authority::{Authority, LookupError, LookupOptions, MessageRequest, ZoneType};
+use hickory_server::authority::{Authority, LookupError, LookupOptions, LookupRecords, MessageRequest, ZoneType};
 use hickory_server::server::RequestInfo;
 use hickory_proto::rr::rdata::A;
 use hickory_proto::rr::{LowerName, RData, Record, RecordType};
@@ -19,7 +19,7 @@ impl SeederAuthority {
         Self { origin, state }
     }
 
-    fn build_lookup(&self, name: &LowerName) -> Result<Vec<Record>, LookupError> {
+    fn build_lookup(&self, name: &LowerName) -> Result<LookupRecords, LookupError> {
         let nodes = self.state.good_nodes.lock().unwrap();
         let mut records = Vec::new();
         for node in nodes.iter() {
@@ -35,13 +35,13 @@ impl SeederAuthority {
         if records.is_empty() {
             return Err(LookupError::from(hickory_proto::op::ResponseCode::NXDomain));
         }
-        Ok(records)
+        Ok(LookupRecords::new(records))
     }
 }
 
 #[async_trait]
 impl Authority for SeederAuthority {
-    type Lookup = Vec<Record>;
+    type Lookup = LookupRecords;
 
     fn origin(&self) -> &LowerName {
         &self.origin
@@ -84,6 +84,6 @@ impl Authority for SeederAuthority {
         _name: &LowerName,
         _lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
-        Ok(Vec::new())
+        Ok(LookupRecords::new(Vec::new()))
     }
 }
