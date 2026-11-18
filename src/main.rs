@@ -466,7 +466,18 @@ async fn dns_thread(state: Arc<AppState>) {
 
     log_info!("logger", "DNS server listening on port 53");
 
-    let _ = server.block_until_done().await;
+    let server_future = server.block_until_done();
+    tokio::pin!(server_future);
+
+    loop {
+        if QUIT.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::select! {
+            _ = &mut server_future => break,
+            _ = tokio::time::sleep(Duration::from_secs(1)) => {},
+        }
+    }
 
     log_trace!("logger", "Exiting dns_thread()");
 }
