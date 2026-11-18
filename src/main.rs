@@ -1,6 +1,6 @@
 mod log; mod message; mod dns;
 
-use crate::log::LogLevel;
+use crate::log::{get_logger, LogLevel};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -529,7 +529,6 @@ pub fn main() {
             print_usage(&args[0]);
             return;
         }
-        i += 1;
     }
 
     // Set the log level
