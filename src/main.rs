@@ -444,7 +444,7 @@ async fn seed_thread(state: Arc<AppState>) {
     log_trace!("logger", "Exiting seed_thread()");
 }
 
-async fn dns_thread(state: Arc<AppState>) {
+async fn dns_thread(state: Arc<AppState>, bind_address: String) {
     log_trace!("logger", "Entering dns_thread()");
 
     let origin_name = Name::from_ascii("seed.peercoin.net.")
@@ -456,12 +456,14 @@ async fn dns_thread(state: Arc<AppState>) {
     catalog.upsert(origin, Box::new(Arc::new(authority)));
     let mut server = ServerFuture::new(catalog);
 
-    let udp_socket = tokio::net::UdpSocket::bind("167.235.67.249:53")
+    let udp_bind = format!("{}:53", bind_address);
+    let udp_socket = tokio::net::UdpSocket::bind(&udp_bind)
         .await
         .expect("Failed to bind UDP socket");
     server.register_socket(udp_socket);
 
-    let tcp_listener = tokio::net::TcpListener::bind("167.235.67.249:53")
+    let tcp_bind = format!("{}:53", bind_address);
+    let tcp_listener = tokio::net::TcpListener::bind(&tcp_bind)
         .await
         .expect("Failed to bind TCP listener");
     server.register_listener(tcp_listener, Duration::from_secs(30));
@@ -555,7 +557,8 @@ fn parse_log_level(level_str: &str) -> Option<LogLevel> {
 }
 
 fn print_usage(prog: &str) {
-    eprintln!("Usage: {} [-l <level>]", prog);
+    eprintln!("Usage: {} -b <bind_address> [-l <level>]", prog);
+    eprintln!("  -b <address>  Bind address for DNS server (required, e.g. 0.0.0.0)");
     eprintln!("  -l <level>  Set log level: trace, debug, info, warn, error, fatal (default: trace)");
     eprintln!("  -h          Show this help message");
 }
@@ -576,12 +579,16 @@ fn address_to_ip(address: &str, out: &mut [u8; 16]) -> i32 {
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut log_level = LogLevel::Trace;
+    let mut bind_address: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
         if args[i] == "-h" || args[i] == "--help" {
             print_usage(&args[0]);
             return;
+        } else if args[i] == "-b" && i + 1 < args.len() {
+            i += 1;
+            bind_address = Some(args[i].clone());
         } else if args[i] == "-l" && i + 1 < args.len() {
             i += 1;
             match parse_log_level(&args[i]) {
@@ -598,6 +605,15 @@ async fn main() {
             return;
         }
     }
+
+    let bind_address = match bind_address {
+        Some(addr) => addr,
+        None => {
+            eprintln!("Error: bind address is required. Use -b <address>");
+            print_usage(&args[0]);
+            return;
+        }
+    };
 
     // Set the log level
     get_logger().lock().unwrap().set_level(log_level);
@@ -616,7 +632,7 @@ async fn main() {
 
     log_info!("logger", "Starting dns thread");
     let dns_state = Arc::clone(&state);
-    let dns_handle = tokio::spawn(async move { dns_thread(dns_state).await });
+    let dns_handle = tokio::spawn(async move { dns_thread(dns_state, bind_address).await });
 
     log_info!("logger", "Starting seed thread");
     let seed_state = Arc::clone(&state);
