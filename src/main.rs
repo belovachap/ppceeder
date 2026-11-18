@@ -38,15 +38,17 @@ pub(crate) struct GoodNode {
 pub(crate) struct AppState {
     good_nodes: Mutex<Vec<GoodNode>>,
     seed_node_ip_addresses: Vec<String>,
-    dns_requests: Arc<AtomicU64>,
+    dns_requests_a: Arc<AtomicU64>,
+    dns_requests_non_a: Arc<AtomicU64>,
 }
 
 impl AppState {
-    fn new(seed_node_ip_addresses: Vec<String>, dns_requests: Arc<AtomicU64>) -> Self {
+    fn new(seed_node_ip_addresses: Vec<String>, dns_requests_a: Arc<AtomicU64>, dns_requests_non_a: Arc<AtomicU64>) -> Self {
         AppState {
             good_nodes: Mutex::new(Vec::new()),
             seed_node_ip_addresses,
-            dns_requests,
+            dns_requests_a,
+            dns_requests_non_a,
         }
     }
 
@@ -487,8 +489,9 @@ async fn stats_thread(state: Arc<AppState>) {
 
     while !QUIT.load(Ordering::Relaxed) {
         let count = state.good_nodes.lock().unwrap().len();
-        let dns_reqs = state.dns_requests.load(Ordering::Relaxed);
-        log_info!("logger", "Stats: {} good nodes, {} dns requests", count, dns_reqs);
+        let dns_reqs_a = state.dns_requests_a.load(Ordering::Relaxed);
+        let dns_reqs_non_a = state.dns_requests_non_a.load(Ordering::Relaxed);
+        log_info!("logger", "Stats: {} good nodes, {} A record requests, {} non-A record requests", count, dns_reqs_a, dns_reqs_non_a);
         for _ in 0..60 {
             if QUIT.load(Ordering::Relaxed) {
                 break;
@@ -607,8 +610,9 @@ async fn main() {
     // Resolve seed nodes and connect
     let seed_node_ip_addresses = resolve_seed_nodes();
 
-    let dns_requests = Arc::new(AtomicU64::new(0));
-    let state = Arc::new(AppState::new(seed_node_ip_addresses, dns_requests));
+    let dns_requests_a = Arc::new(AtomicU64::new(0));
+    let dns_requests_non_a = Arc::new(AtomicU64::new(0));
+    let state = Arc::new(AppState::new(seed_node_ip_addresses, dns_requests_a, dns_requests_non_a));
 
     log_info!("logger", "Starting dns thread");
     let dns_state = Arc::clone(&state);

@@ -66,10 +66,11 @@ impl Authority for SeederAuthority {
         rtype: RecordType,
         lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
-        self.state.dns_requests.fetch_add(1, Ordering::Relaxed);
         if rtype != RecordType::A {
+            self.state.dns_requests_non_a.fetch_add(1, Ordering::Relaxed);
             return Err(LookupError::from(hickory_proto::op::ResponseCode::NXDomain));
         }
+        self.state.dns_requests_a.fetch_add(1, Ordering::Relaxed);
         self.build_lookup(name, lookup_options)
     }
 
@@ -100,34 +101,40 @@ mod tests {
 
     #[tokio::test]
     async fn test_dns_requests_counter_increments() {
-        let dns_requests = Arc::new(AtomicU64::new(0));
-        let state = Arc::new(AppState::new(vec![], Arc::clone(&dns_requests)));
+        let dns_requests_a = Arc::new(AtomicU64::new(0));
+        let dns_requests_non_a = Arc::new(AtomicU64::new(0));
+        let state = Arc::new(AppState::new(vec![], Arc::clone(&dns_requests_a), Arc::clone(&dns_requests_non_a)));
         let origin = LowerName::from(Name::from_ascii("example.com.").unwrap());
         let authority = SeederAuthority::new(origin, Arc::clone(&state));
 
-        assert_eq!(dns_requests.load(Ordering::Relaxed), 0);
+        assert_eq!(dns_requests_a.load(Ordering::Relaxed), 0);
+        assert_eq!(dns_requests_non_a.load(Ordering::Relaxed), 0);
 
         let name = LowerName::from(Name::from_ascii("example.com.").unwrap());
         let _ = authority.lookup(&name, RecordType::A, LookupOptions::default()).await;
 
-        assert_eq!(dns_requests.load(Ordering::Relaxed), 1);
+        assert_eq!(dns_requests_a.load(Ordering::Relaxed), 1);
+        assert_eq!(dns_requests_non_a.load(Ordering::Relaxed), 0);
 
         // Second call should increment again
         let _ = authority.lookup(&name, RecordType::A, LookupOptions::default()).await;
 
-        assert_eq!(dns_requests.load(Ordering::Relaxed), 2);
+        assert_eq!(dns_requests_a.load(Ordering::Relaxed), 2);
+        assert_eq!(dns_requests_non_a.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
     async fn test_dns_requests_counter_increments_on_non_a_record() {
-        let dns_requests = Arc::new(AtomicU64::new(0));
-        let state = Arc::new(AppState::new(vec![], Arc::clone(&dns_requests)));
+        let dns_requests_a = Arc::new(AtomicU64::new(0));
+        let dns_requests_non_a = Arc::new(AtomicU64::new(0));
+        let state = Arc::new(AppState::new(vec![], Arc::clone(&dns_requests_a), Arc::clone(&dns_requests_non_a)));
         let origin = LowerName::from(Name::from_ascii("example.com.").unwrap());
         let authority = SeederAuthority::new(origin, Arc::clone(&state));
 
         let name = LowerName::from(Name::from_ascii("example.com.").unwrap());
         let _ = authority.lookup(&name, RecordType::AAAA, LookupOptions::default()).await;
 
-        assert_eq!(dns_requests.load(Ordering::Relaxed), 1);
+        assert_eq!(dns_requests_a.load(Ordering::Relaxed), 0);
+        assert_eq!(dns_requests_non_a.load(Ordering::Relaxed), 1);
     }
 }
