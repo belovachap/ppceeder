@@ -604,6 +604,7 @@ async fn main() {
             print_usage(&args[0]);
             return;
         }
+        i += 1;
     }
 
     let bind_address = match bind_address {
