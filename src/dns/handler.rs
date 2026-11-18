@@ -68,7 +68,7 @@ impl Authority for SeederAuthority {
     ) -> Result<Self::Lookup, LookupError> {
         self.state.dns_requests.fetch_add(1, Ordering::Relaxed);
         if rtype != RecordType::A {
-            return Err(LookupError::from(hickory_proto::op::ResponseCode::NoError));
+            return Err(LookupError::from(hickory_proto::op::ResponseCode::NXDomain));
         }
         self.build_lookup(name, lookup_options)
     }
