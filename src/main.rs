@@ -391,7 +391,7 @@ async fn seed_thread(state: Arc<AppState>) {
         log_debug!("logger", "seed_thread() starting while loop...");
 
         let mut all_discovered: HashSet<String> = HashSet::new();
-        let mut max_seed_height: i32 = 0;
+        let mut min_seed_height: i32 = 0;
 
         // Spawn concurrent tasks for each seed node
         let mut join_set = JoinSet::new();
@@ -422,8 +422,10 @@ async fn seed_thread(state: Arc<AppState>) {
         while let Some(result) = join_set.join_next().await {
             match result {
                 Ok((_seed_ip, seed_height, discovered)) => {
-                    if seed_height > max_seed_height {
-                        max_seed_height = seed_height;
+                    if min_seed_height == 0 {
+                        min_seed_height = seed_height;
+                    } else if seed_height < min_seed_height {
+                        min_seed_height = seed_height;
                     }
                     all_discovered.extend(discovered);
                 }
@@ -434,7 +436,7 @@ async fn seed_thread(state: Arc<AppState>) {
         }
 
         if !all_discovered.is_empty() {
-            check_nodes(&state, &all_discovered, max_seed_height).await;
+            check_nodes(&state, &all_discovered, min_seed_height).await;
         }
 
         log_debug!("logger", "seed_thread() taking a 60 minute break...");
