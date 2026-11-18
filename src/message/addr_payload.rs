@@ -1,6 +1,5 @@
 // message/addr_payload.rs
 
-use crate::message::bytes::Bytes;
 use crate::message::net_addr::NetAddr;
 use crate::message::var_int::VarInt;
 

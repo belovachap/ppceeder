@@ -1,11 +1,10 @@
 use std::io;
-use std::mem::MaybeUninit;
 use std::os::unix::io::RawFd;
 
 use libc::{
     c_int, c_void, in6addr_any, sockaddr_in6, socklen_t,
-    AF_INET6, CMSG_DATA, CMSG_FIRSTHDR, CMSG_NXTHDR, IPPROTO_IP, IP_PKTINFO,
-    IPPROTO_UDP, MSG_DONTWAIT, SOCK_DGRAM,
+    AF_INET6, CMSG_FIRSTHDR, CMSG_NXTHDR, IPPROTO_IP, IP_PKTINFO,
+    IPPROTO_UDP, SOCK_DGRAM,
 };
 
 use super::protocol::{dns_handle, DnsOpt};
@@ -41,7 +40,7 @@ pub fn dnsserver(opt: &mut DnsOpt) -> io::Result<()> {
     let mut si6_me: sockaddr_in6 = unsafe { std::mem::zeroed() };
     si6_me.sin6_family = AF_INET6 as u16;
     si6_me.sin6_port = opt.port.to_be();
-    si6_me.sin6_addr = in6addr_any;
+    si6_me.sin6_addr = unsafe { in6addr_any };
 
     let bind_ret = unsafe {
         bind(

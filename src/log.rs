@@ -3,8 +3,14 @@
 use std::fmt;
 use std::fs::File;
 use std::io::Write;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
+
+static LOGGER: OnceLock<Mutex<Logger>> = OnceLock::new();
+
+fn get_logger() -> &'static Mutex<Logger> {
+    LOGGER.get_or_init(|| Mutex::new(Logger::new()))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
@@ -97,43 +103,43 @@ fn format_timestamp() -> String {
 /// Convenience macros that mirror the C macros.
 #[macro_export]
 macro_rules! log_trace {
-    ($logger:expr, $($arg:tt)*) => {
-        $logger.log($crate::log::LogLevel::Trace, file!(), line!(), &format!($($arg)*))
+    ($_logger:expr, $($arg:tt)*) => {
+        get_logger().lock().unwrap().log($crate::log::LogLevel::Trace, file!(), line!(), &format!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! log_debug {
-    ($logger:expr, $($arg:tt)*) => {
-        $logger.log($crate::log::LogLevel::Debug, file!(), line!(), &format!($($arg)*))
+    ($_logger:expr, $($arg:tt)*) => {
+        get_logger().lock().unwrap().log($crate::log::LogLevel::Debug, file!(), line!(), &format!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! log_info {
-    ($logger:expr, $($arg:tt)*) => {
-        $logger.log($crate::log::LogLevel::Info, file!(), line!(), &format!($($arg)*))
+    ($_logger:expr, $($arg:tt)*) => {
+        get_logger().lock().unwrap().log($crate::log::LogLevel::Info, file!(), line!(), &format!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! log_warn {
-    ($logger:expr, $($arg:tt)*) => {
-        $logger.log($crate::log::LogLevel::Warn, file!(), line!(), &format!($($arg)*))
+    ($_logger:expr, $($arg:tt)*) => {
+        get_logger().lock().unwrap().log($crate::log::LogLevel::Warn, file!(), line!(), &format!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! log_error {
-    ($logger:expr, $($arg:tt)*) => {
-        $logger.log($crate::log::LogLevel::Error, file!(), line!(), &format!($($arg)*))
+    ($_logger:expr, $($arg:tt)*) => {
+        get_logger().lock().unwrap().log($crate::log::LogLevel::Error, file!(), line!(), &format!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! log_fatal {
-    ($logger:expr, $($arg:tt)*) => {
-        $logger.log($crate::log::LogLevel::Fatal, file!(), line!(), &format!($($arg)*))
+    ($_logger:expr, $($arg:tt)*) => {
+        get_logger().lock().unwrap().log($crate::log::LogLevel::Fatal, file!(), line!(), &format!($($arg)*))
     };
 }
 

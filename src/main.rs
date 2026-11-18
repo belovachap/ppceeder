@@ -1,6 +1,6 @@
 mod log; mod message; mod dns;
 
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -8,7 +8,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::dns::protocol::{Addr, DnsOpt};
 use crate::dns::server::dnsserver;
-use crate::log::{log_debug, log_error, log_info, log_trace, log_warn, LogLevel, Logger};
 use crate::message::addr_payload::AddrPayload;
 use crate::message::message::Message;
 use crate::message::net_addr::NetAddr;
@@ -167,7 +166,7 @@ fn connect_to_node(ip_str: &str) -> Option<(std::net::TcpStream, SocketAddrV4, V
         PEERCOIN_PORT,
     );
 
-    let mut stream = match std::net::TcpStream::connect_timeout(&dest, Duration::from_secs(5)) {
+    let mut stream = match std::net::TcpStream::connect_timeout(&SocketAddr::V4(dest), Duration::from_secs(5)) {
         Ok(s) => s,
         Err(_) => {
             log_debug!("logger", "Could not connect to node {}", ip_str);
@@ -396,8 +395,8 @@ fn dns_thread(state: Arc<AppState>) {
     log_trace!("logger", "Entering dns_thread()");
 
     let state_clone = Arc::clone(&state);
-    let cb = Box::new(move |_opt: &DnsOpt, addrs: &mut Vec<Addr>, max: usize, ipv4: bool, ipv6: bool| -> usize {
-        state_clone.get_good_ip_list(addrs, max, ipv4, ipv6)
+    let cb = Box::new(move |_opt: &DnsOpt, addrs: &mut Vec<Addr>, ipv4: bool, ipv6: bool| -> usize {
+        state_clone.get_good_ip_list(addrs, usize::MAX, ipv4, ipv6)
     });
 
     let mut dns_opt = DnsOpt {

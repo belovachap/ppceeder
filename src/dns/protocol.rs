@@ -1,5 +1,3 @@
-use std::io;
-
 pub const CLASS_IN: u16 = 1;
 pub const QCLASS_ANY: u16 = 255;
 
