@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use hickory_server::authority::{Authority, LookupError, LookupOptions, LookupRecords, MessageRequest, ZoneType};
 use hickory_server::server::RequestInfo;
 use hickory_proto::rr::rdata::A;
-use hickory_proto::rr::{LowerName, RData, Record, RecordType};
+use hickory_proto::rr::{LowerName, RData, RecordSet, RecordType};
 
 use crate::AppState;
 
@@ -19,23 +19,22 @@ impl SeederAuthority {
         Self { origin, state }
     }
 
-    fn build_lookup(&self, name: &LowerName) -> Result<LookupRecords, LookupError> {
+    fn build_lookup(&self, name: &LowerName, lookup_options: LookupOptions) -> Result<LookupRecords, LookupError> {
         let nodes = self.state.good_nodes.lock().unwrap();
-        let mut records = Vec::new();
+        let mut rdatas = Vec::new();
         for node in nodes.iter() {
             if let Ok(ip) = node.ip_address.parse::<Ipv4Addr>() {
-                let mut record = Record::new();
-                record.set_name(name.clone().into());
-                record.set_rr_type(RecordType::A);
-                record.set_ttl(60);
-                record.set_data(Some(RData::A(A(ip))));
-                records.push(record);
+                rdatas.push(RData::A(A(ip)));
             }
         }
-        if records.is_empty() {
+        if rdatas.is_empty() {
             return Err(LookupError::from(hickory_proto::op::ResponseCode::NXDomain));
         }
-        Ok(LookupRecords::new(records))
+        let mut record_set = RecordSet::new(name.clone().into(), RecordType::A, 60);
+        for rdata in rdatas {
+            record_set.add_rdata(rdata);
+        }
+        Ok(LookupRecords::new(lookup_options, Arc::new(record_set)))
     }
 }
 
@@ -63,12 +62,12 @@ impl Authority for SeederAuthority {
         &self,
         name: &LowerName,
         rtype: RecordType,
-        _lookup_options: LookupOptions,
+        lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
         if rtype != RecordType::A {
             return Err(LookupError::from(hickory_proto::op::ResponseCode::NoError));
         }
-        self.build_lookup(name)
+        self.build_lookup(name, lookup_options)
     }
 
     async fn search(
@@ -82,8 +81,8 @@ impl Authority for SeederAuthority {
     async fn get_nsec_records(
         &self,
         _name: &LowerName,
-        _lookup_options: LookupOptions,
+        lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
-        Ok(LookupRecords::new(Vec::new()))
+        Ok(LookupRecords::new(lookup_options, Arc::new(RecordSet::new(hickory_proto::rr::Name::root(), RecordType::A, 0))))
     }
 }
