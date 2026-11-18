@@ -33,10 +33,10 @@ struct AppState {
 }
 
 impl AppState {
-    fn new() -> Self {
+    fn new(seed_node_ip_addresses: Vec<String>) -> Self {
         AppState {
             good_nodes: Mutex::new(Vec::new()),
-            seed_node_ip_addresses: Vec::new(),
+            seed_node_ip_addresses,
         }
     }
 
@@ -453,13 +453,12 @@ fn evict_thread(state: Arc<AppState>) {
             .as_secs()
             .saturating_sub(24 * 60 * 60);
 
-        let mut evicted = 0;
-        {
+        let evicted = {
             let mut nodes = state.good_nodes.lock().unwrap();
             let before = nodes.len();
             nodes.retain(|node| node.last_contact > cutoff);
-            evicted = before - nodes.len();
-        }
+            before - nodes.len()
+        };
 
         if evicted > 0 {
             log_info!("logger", "Evicted {} stale node(s) from GOOD_NODES.", evicted);
@@ -508,7 +507,7 @@ fn address_to_ip(address: &str, out: &mut [u8; 16]) -> i32 {
 
 pub fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let mut log_level = LogLevel::Trace;
+    let log_level;
 
     let mut i = 1;
     while i < args.len() {
@@ -518,7 +517,7 @@ pub fn main() {
         } else if args[i] == "-l" && i + 1 < args.len() {
             i += 1;
             match parse_log_level(&args[i]) {
-                Some(level) => log_level = level,
+                Some(level) => { log_level = level; break; }
                 None => {
                     eprintln!("Invalid log level: {}", args[i]);
                     print_usage(&args[0]);
@@ -533,18 +532,18 @@ pub fn main() {
         i += 1;
     }
 
+    // Set the log level
+    get_logger().lock().unwrap().set_level(log_level);
+
     // Set up signal handler
     unsafe {
-        libc::signal(libc::SIGINT, handle_control_c as libc::sighandler_t);
+        libc::signal(libc::SIGINT, handle_control_c as *const () as libc::sighandler_t);
     }
 
     // Resolve seed nodes and connect
     let seed_node_ip_addresses = resolve_seed_nodes();
 
-    let state = Arc::new(AppState {
-        good_nodes: Mutex::new(Vec::new()),
-        seed_node_ip_addresses,
-    });
+    let state = Arc::new(AppState::new(seed_node_ip_addresses));
 
     log_info!("logger", "Starting dns thread");
     let dns_state = Arc::clone(&state);

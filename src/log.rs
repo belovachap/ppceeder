@@ -55,10 +55,12 @@ impl Logger {
         self.level = level;
     }
 
+    #[allow(dead_code)]
     pub fn set_quiet(&mut self, enable: bool) {
         self.quiet = enable;
     }
 
+    #[allow(dead_code)]
     pub fn set_fp(&mut self, fp: Option<File>) {
         self.fp = fp;
     }

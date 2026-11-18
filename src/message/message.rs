@@ -47,6 +47,7 @@ impl Message {
     }
 
     /// Parse a message from a byte slice.
+    #[allow(dead_code)]
     pub fn parse(bytes: &[u8]) -> (Message, usize) {
         let magic = read_u32_le(&bytes[0..4]);
         let mut command = [0u8; 12];

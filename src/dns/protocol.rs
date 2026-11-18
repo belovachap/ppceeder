@@ -30,6 +30,7 @@ impl DnsType {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum Addr {
     V4([u8; 4]),
     V6([u8; 16]),
@@ -328,14 +329,6 @@ pub fn dns_handle(opt: &DnsOpt, inbuf: &[u8]) -> Result<Vec<u8>, i32> {
     let mut ancount: u8 = 0;
     let mut nscount: u8 = 0;
     let mut have_ns = false;
-
-    // Calculate authority size (for reserving space)
-    let mut auth_size = 0;
-    if !((typ == DnsType::Ns || typ == DnsType::Any) && (cls == CLASS_IN || cls == QCLASS_ANY)) {
-        let mut tmp: Vec<u8> = Vec::new();
-        let _ = write_record_ns(&mut tmp, "", offset, CLASS_IN, 0, &opt.ns);
-        auth_size = tmp.len();
-    }
 
     // Answer section
     if (typ == DnsType::Ns || typ == DnsType::Any) && (cls == CLASS_IN || cls == QCLASS_ANY) {

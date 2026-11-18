@@ -34,32 +34,3 @@ pub fn read_i64_le(buf: &[u8]) -> i64 {
     i64::from_le_bytes(bytes)
 }
 
-/// Write a little-endian u16 into a byte slice.
-pub fn write_u16_le(buf: &mut [u8], v: u16) {
-    buf[..2].copy_from_slice(&v.to_le_bytes());
-}
-
-/// Write a big-endian u16 into a byte slice.
-pub fn write_u16_be(buf: &mut [u8], v: u16) {
-    buf[..2].copy_from_slice(&v.to_be_bytes());
-}
-
-/// Write a little-endian u32 into a byte slice.
-pub fn write_u32_le(buf: &mut [u8], v: u32) {
-    buf[..4].copy_from_slice(&v.to_le_bytes());
-}
-
-/// Write a little-endian i32 into a byte slice.
-pub fn write_i32_le(buf: &mut [u8], v: i32) {
-    buf[..4].copy_from_slice(&v.to_le_bytes());
-}
-
-/// Write a little-endian u64 into a byte slice.
-pub fn write_u64_le(buf: &mut [u8], v: u64) {
-    buf[..8].copy_from_slice(&v.to_le_bytes());
-}
-
-/// Write a little-endian i64 into a byte slice.
-pub fn write_i64_le(buf: &mut [u8], v: i64) {
-    buf[..8].copy_from_slice(&v.to_le_bytes());
-}
