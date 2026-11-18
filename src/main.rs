@@ -117,7 +117,7 @@ async fn write_version_message(
     let version_payload = VersionPayload::new(addr_recv, addr_from, user_agent);
     let payload = version_payload.serialize();
     let message = Message::new("version", payload);
-    let _ = message.write(stream).await;
+    let _ = tokio::time::timeout(Duration::from_secs(5), message.write(stream)).await;
 
     log_trace!("logger", "Exiting write_version_message()");
 }
@@ -125,10 +125,10 @@ async fn write_version_message(
 async fn read_version_message(stream: &mut TcpStream) -> Option<VersionPayload> {
     log_trace!("logger", "Entering read_version_message()");
 
-    let message = match Message::read(stream).await {
-        Ok(m) => m,
-        Err(_) => {
-            log_error!("logger", "Failed to read_message.");
+    let message = match tokio::time::timeout(Duration::from_secs(5), Message::read(stream)).await {
+        Ok(Ok(m)) => m,
+        _ => {
+            log_error!("logger", "Failed to read_message or timed out.");
             log_trace!("logger", "Exiting read_version_message()");
             return None;
         }
@@ -153,14 +153,14 @@ async fn read_version_message(stream: &mut TcpStream) -> Option<VersionPayload> 
 async fn write_verack_message(stream: &mut TcpStream) {
     log_trace!("logger", "Entering write_verack_message()");
     let message = Message::new("verack", Vec::new());
-    let _ = message.write(stream).await;
+    let _ = tokio::time::timeout(Duration::from_secs(5), message.write(stream)).await;
     log_trace!("logger", "Exiting write_verack_message()");
 }
 
 async fn write_getaddr_message(stream: &mut TcpStream) {
     log_trace!("logger", "Entering write_getaddr_message()");
     let message = Message::new("getaddr", Vec::new());
-    let _ = message.write(stream).await;
+    let _ = tokio::time::timeout(Duration::from_secs(5), message.write(stream)).await;
     log_trace!("logger", "Exiting write_getaddr_message()");
 }
 
@@ -172,9 +172,13 @@ async fn connect_to_node(ip_str: &str) -> Option<(TcpStream, SocketAddrV4, Versi
         PEERCOIN_PORT,
     );
 
-    let mut stream = match TcpStream::connect(&dest).await {
-        Ok(s) => s,
-        Err(_) => {
+    let mut stream = match tokio::time::timeout(
+        Duration::from_secs(5),
+        TcpStream::connect(&dest),
+    ).await {
+        Ok(Ok(s)) => s,
+        _ => {
+            log_debug!("logger", "Connection to {} timed out or failed.", ip_str);
             return None;
         }
     };
@@ -212,9 +216,12 @@ async fn check_node_version(ip_str: &str) -> Option<VersionPayload> {
         PEERCOIN_PORT,
     );
 
-    let mut stream = match TcpStream::connect(&dest).await {
-        Ok(s) => s,
-        Err(_) => return None,
+    let mut stream = match tokio::time::timeout(
+        Duration::from_secs(5),
+        TcpStream::connect(&dest),
+    ).await {
+        Ok(Ok(s)) => s,
+        _ => return None,
     };
 
     let from = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
@@ -281,10 +288,10 @@ async fn process_seed_node_messages(
             break;
         }
 
-        let message = match Message::read(stream).await {
-            Ok(m) => m,
-            Err(_) => {
-                log_warn!("logger", "Seed node connection lost, moving on.");
+        let message = match tokio::time::timeout(Duration::from_secs(5), Message::read(stream)).await {
+            Ok(Ok(m)) => m,
+            _ => {
+                log_warn!("logger", "Seed node connection lost or timed out, moving on.");
                 break;
             }
         };
