@@ -68,10 +68,7 @@ impl AppState {
         });
     }
 
-    fn get_good_ip_list(&self, _max: usize, _ipv4: bool, _ipv6: bool) -> usize {
-        let nodes = self.good_nodes.lock().unwrap();
-        nodes.len().min(_max)
-    }
+
 }
 
 async fn write_version_message(
