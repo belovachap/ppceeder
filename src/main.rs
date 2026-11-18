@@ -1,5 +1,8 @@
 mod log; mod message; mod dns;
 
+use hickory_server::authority::Catalog;
+use hickory_proto::rr::LowerName;
+
 use std::collections::HashSet;
 use std::ffi::CString;
 use crate::log::{get_logger, LogLevel};
@@ -445,11 +448,14 @@ async fn seed_thread(state: Arc<AppState>) {
 async fn dns_thread(state: Arc<AppState>) {
     log_trace!("logger", "Entering dns_thread()");
 
-    let origin = Name::from_ascii("dot-net-ns.peercoin-library.org.")
+    let origin_name = Name::from_ascii("dot-net-ns.peercoin-library.org.")
         .expect("Invalid origin name");
+    let origin = LowerName::from(origin_name.clone());
     let authority = SeederAuthority::new(origin, Arc::clone(&state));
 
-    let mut server = ServerFuture::new(authority);
+    let mut catalog = Catalog::new();
+    catalog.upsert(origin_name, Box::new(authority));
+    let mut server = ServerFuture::new(catalog);
 
     let udp_socket = tokio::net::UdpSocket::bind("0.0.0.0:53")
         .await

@@ -2,46 +2,48 @@ use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use hickory_server::authority::{Authority, Lookup, LookupOptions, ZoneType};
-use hickory_proto::op::{Message, ResponseCode};
+use hickory_server::authority::{Authority, LookupError, LookupOptions, MessageRequest, ZoneType};
+use hickory_server::server::RequestInfo;
 use hickory_proto::rr::rdata::A;
-use hickory_proto::rr::{Name, RData, Record, RecordType};
+use hickory_proto::rr::{LowerName, RData, Record, RecordType};
 
 use crate::AppState;
 
 pub struct SeederAuthority {
-    origin: Name,
+    origin: LowerName,
     state: Arc<AppState>,
 }
 
 impl SeederAuthority {
-    pub fn new(origin: Name, state: Arc<AppState>) -> Self {
+    pub fn new(origin: LowerName, state: Arc<AppState>) -> Self {
         Self { origin, state }
     }
 
-    fn build_lookup(&self, name: &Name) -> Result<Lookup, ResponseCode> {
+    fn build_lookup(&self, name: &LowerName) -> Result<Vec<Record>, LookupError> {
         let nodes = self.state.good_nodes.lock().unwrap();
         let mut records = Vec::new();
         for node in nodes.iter() {
             if let Ok(ip) = node.ip_address.parse::<Ipv4Addr>() {
                 let mut record = Record::new();
-                record.set_name(name.clone());
-                record.set_rrtype(RecordType::A);
+                record.set_name(name.clone().into());
+                record.set_rr_type(RecordType::A);
                 record.set_ttl(60);
-                record.set_data(RData::A(A(ip)));
+                record.set_data(Some(RData::A(A(ip))));
                 records.push(record);
             }
         }
         if records.is_empty() {
-            return Err(ResponseCode::NXDomain);
+            return Err(LookupError::from(hickory_proto::op::ResponseCode::NXDomain));
         }
-        Ok(Lookup::new(records))
+        Ok(records)
     }
 }
 
 #[async_trait]
 impl Authority for SeederAuthority {
-    fn origin(&self) -> &Name {
+    type Lookup = Vec<Record>;
+
+    fn origin(&self) -> &LowerName {
         &self.origin
     }
 
@@ -53,41 +55,35 @@ impl Authority for SeederAuthority {
         false
     }
 
-    async fn update(&self, _update: &Message) -> Result<bool, ResponseCode> {
-        Err(ResponseCode::NotImp)
+    async fn update(&self, _update: &MessageRequest) -> Result<bool, LookupError> {
+        Err(LookupError::from(hickory_proto::op::ResponseCode::NotImp))
     }
 
     async fn lookup(
         &self,
-        name: &Name,
+        name: &LowerName,
         rtype: RecordType,
         _lookup_options: LookupOptions,
-    ) -> Result<Lookup, ResponseCode> {
+    ) -> Result<Self::Lookup, LookupError> {
         if rtype != RecordType::A {
-            return Err(ResponseCode::NoError);
+            return Err(LookupError::from(hickory_proto::op::ResponseCode::NoError));
         }
         self.build_lookup(name)
     }
 
     async fn search(
         &self,
-        name: &Name,
-        rtype: RecordType,
+        request: RequestInfo<'_>,
         lookup_options: LookupOptions,
-    ) -> Result<Lookup, ResponseCode> {
-        self.lookup(name, rtype, lookup_options).await
+    ) -> Result<Self::Lookup, LookupError> {
+        self.lookup(request.name(), request.query_type(), lookup_options).await
     }
 
-    async fn query(
+    async fn get_nsec_records(
         &self,
-        request: &Message,
-        lookup_options: LookupOptions,
-    ) -> Result<Lookup, ResponseCode> {
-        let name = request.queries().first().map(|q| q.name().clone());
-        let rtype = request.queries().first().map(|q| q.query_type());
-        match (name, rtype) {
-            (Some(name), Some(rtype)) => self.lookup(&name, rtype, lookup_options).await,
-            _ => Err(ResponseCode::FormErr),
-        }
+        _name: &LowerName,
+        _lookup_options: LookupOptions,
+    ) -> Result<Self::Lookup, LookupError> {
+        Ok(Vec::new())
     }
 }
